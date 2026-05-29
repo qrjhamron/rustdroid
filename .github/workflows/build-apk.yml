@@ -24,9 +24,7 @@ jobs:
           cache: 'gradle'
 
       - name: Set up Rust
-        uses: actions/rust-actions/setup-rust@v1
-        with:
-          rust-version: stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Run Rust Tests
         run: cargo test --workspace --manifest-path rust/Cargo.toml
