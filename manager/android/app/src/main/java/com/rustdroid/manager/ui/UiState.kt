@@ -1,94 +1,88 @@
 package com.rustdroid.manager.ui
 
-/**
- * Simple status levels for user-facing summaries.
- */
-enum class StatusLevel {
+import com.rustdroid.manager.BootImageAnalysisResult
+import com.rustdroid.manager.BootPatchResult
+import com.rustdroid.manager.NativeLibraryStatus
+import com.rustdroid.manager.NativeLogEntry
+import com.rustdroid.manager.data.AppSettings
+import com.rustdroid.manager.data.LanguageMode
+import com.rustdroid.manager.data.ThemeMode
+import com.rustdroid.manager.data.UpdateChannel
+
+enum class DeviceCompatibilityLevel {
     Ready,
     Warning,
-    Blocked,
-    Unsupported,
-    Unavailable,
-    Unknown;
-
-    companion object {
-        fun fromString(s: String): StatusLevel = when (s.lowercase()) {
-            "ready", "success", "clean", "safe", "supported",
-            "supportedforofflinepatch" -> Ready
-            "warning", "warnings" -> Warning
-            "blocked", "failed", "rejected" -> Blocked
-            "unsupported", "not_supported", "notsupported" -> Unsupported
-            "unavailable", "error" -> Unavailable
-            else -> Unknown
-        }
-    }
+    Unknown,
+    Blocked
 }
 
-/** State for the Home screen. */
 data class HomeUiState(
     val isLoading: Boolean = true,
-    val nativeLoaded: Boolean = false,
-    val rustdroidStatus: String = "Unknown",
-    val nativeBridgeStatus: String = "Unavailable",
-    val rootStatus: String = "Unknown",
-    val daemonStatus: String = "Offline",
-    val deviceCompatibility: StatusLevel = StatusLevel.Unknown,
-    val runtimeCompatibility: StatusLevel = StatusLevel.Unknown,
-    val releaseReadiness: String = "Unknown",
+    val isPatching: Boolean = false,
+    val nativeStatus: NativeLibraryStatus = NativeLibraryStatus(
+        loaded = false,
+        libraryName = "rustdroid_native",
+        abi = "unknown",
+        version = "Unavailable",
+        error = "Native library not loaded"
+    ),
+    val selectedImagePath: String? = null,
+    val analysis: BootImageAnalysisResult? = null,
+    val lastPatchResult: BootPatchResult? = null,
+    val deviceCompatibilityLevel: DeviceCompatibilityLevel = DeviceCompatibilityLevel.Unknown,
+    val statusMessage: String? = null,
     val errorMessage: String? = null
 )
 
-/** A single superuser policy entry. */
-data class SuperuserEntry(
-    val uid: Int,
+data class SuperuserAppEntry(
+    val appName: String,
     val packageName: String,
     val state: String,
-    val ruleType: String
+    val lastUsed: String
 )
 
-/** State for the Superuser screen. */
 data class SuperuserUiState(
-    val isLoading: Boolean = true,
-    val entries: List<SuperuserEntry> = emptyList(),
-    val errorMessage: String? = null
+    val isLoading: Boolean = false,
+    val entries: List<SuperuserAppEntry> = emptyList(),
+    val unavailableReason: String? = "Unavailable"
 )
 
-/** A single installed module entry. */
-data class ModuleEntry(
-    val id: String,
+data class ModuleUiEntry(
     val name: String,
     val version: String,
-    val author: String,
-    val description: String,
     val enabled: Boolean
 )
 
-/** State for the Modules screen. */
 data class ModulesUiState(
-    val isLoading: Boolean = true,
-    val modules: List<ModuleEntry> = emptyList(),
-    val errorMessage: String? = null,
-    val statusMessage: String? = null
+    val isLoading: Boolean = false,
+    val modules: List<ModuleUiEntry> = emptyList(),
+    val unavailableReason: String? = "Unavailable"
 )
 
-/** A single log line. */
-data class LogLine(
-    val timestamp: String,
-    val message: String
-)
-
-/** State for the Log screen. */
 data class LogUiState(
-    val isLoading: Boolean = true,
-    val selectedLog: String = "su.log",
-    val logLines: List<String> = emptyList(),
+    val isLoading: Boolean = false,
+    val selectedCategory: String = "native",
+    val entries: List<NativeLogEntry> = emptyList(),
+    val message: String? = null,
     val errorMessage: String? = null
 )
 
-/** State for the Settings screen. */
 data class SettingsUiState(
-    val nativeLoaded: Boolean = false,
+    val appSettings: AppSettings = AppSettings(),
+    val nativeStatus: NativeLibraryStatus = NativeLibraryStatus(
+        loaded = false,
+        libraryName = "rustdroid_native",
+        abi = "unknown",
+        version = "Unavailable",
+        error = "Native library not loaded"
+    ),
     val appVersion: String = "1.0.0",
-    val rustdroidVersion: String = "Unknown",
+    val rustdroidVersion: String = "Unavailable",
     val statusMessage: String? = null
 )
+
+val LogCategories = listOf("su", "daemon", "first_boot", "self_check", "module", "native", "patch")
+
+val ThemeOptions = ThemeMode.entries.toList()
+val LanguageOptions = LanguageMode.entries.toList()
+val ChannelOptions = UpdateChannel.entries.toList()

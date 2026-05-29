@@ -1,142 +1,174 @@
 package com.rustdroid.manager.ui.screen
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.rustdroid.manager.ui.LogCategories
 import com.rustdroid.manager.ui.LogUiState
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Text
-
-private val LOG_FILES = listOf("su.log", "daemon.log", "first_boot.log", "self_check.log", "module.log")
 
 @Composable
 fun LogScreen(
     state: LogUiState,
-    onLoadLog: (logName: String) -> Unit
+    onRefresh: (category: String) -> Unit,
+    onClearCategory: (category: String) -> Unit
 ) {
-    LaunchedEffect(Unit) { onLoadLog(state.selectedLog) }
+    LaunchedEffect(Unit) { onRefresh(state.selectedCategory) }
+
+    val context = LocalContext.current
+    val selectedLine = remember { mutableStateOf<String?>(null) }
+
+    selectedLine.value?.let { line ->
+        AlertDialog(
+            onDismissRequest = { selectedLine.value = null },
+            title = { Text("Log line") },
+            text = { Text(line) },
+            confirmButton = {
+                TextButton(onClick = { selectedLine.value = null }) {
+                    Text("Close")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    copyToClipboard(context, line)
+                    selectedLine.value = null
+                }) {
+                    Icon(Icons.Rounded.ContentCopy, contentDescription = null)
+                    Text("Copy")
+                }
+            }
+        )
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Header with refresh
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "Logs",
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp
-            )
-            IconButton(onClick = { onLoadLog(state.selectedLog) }) {
-                Icon(
-                    imageVector = Icons.Rounded.Refresh,
-                    contentDescription = "Refresh",
-                    tint = Color(0xFF0284C7),
-                    modifier = Modifier.size(20.dp)
+            Text("Logs", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Row {
+                IconButton(onClick = { onClearCategory(state.selectedCategory) }) {
+                    Text("Clear", style = MaterialTheme.typography.labelLarge)
+                }
+                IconButton(onClick = { onRefresh(state.selectedCategory) }) {
+                    Icon(Icons.Rounded.Refresh, contentDescription = "Refresh")
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            LogCategories.forEach { category ->
+                AssistChip(
+                    onClick = { onRefresh(category) },
+                    label = { Text(category) },
+                    shape = RoundedCornerShape(12.dp)
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Log file chips
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            LOG_FILES.forEach { log ->
-                val isSelected = log == state.selectedLog
-                androidx.compose.material3.TextButton(
-                    onClick = { onLoadLog(log) },
-                    colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
-                        containerColor = if (isSelected) Color(0xFF0284C7) else Color.Transparent,
-                        contentColor = if (isSelected) Color.White else Color.Gray
-                    ),
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(6.dp),
-                    contentPadding = PaddingValues(horizontal = 2.dp, vertical = 2.dp)
-                ) {
-                    Text(
-                        text = log.substringBefore("."),
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Loading
         if (state.isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                CircularProgressIndicator()
             }
             return
         }
 
-        // Error state
-        state.errorMessage?.let {
-            EmptyState(
-                icon = Icons.Rounded.Description,
-                title = "Logs unavailable",
-                subtitle = it
-            )
+        state.errorMessage?.let { error ->
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = error,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(14.dp)
+                )
+            }
             return
         }
 
-        // Empty state
-        if (state.logLines.isEmpty()) {
-            EmptyState(
-                icon = Icons.Rounded.Description,
-                title = "No log entries",
-                subtitle = "This log file is empty."
-            )
+        if (state.entries.isEmpty()) {
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = state.message ?: "No logs yet",
+                    modifier = Modifier.padding(14.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             return
         }
 
-        // Log content
-        Card(modifier = Modifier.fillMaxSize()) {
+        ElevatedCard(modifier = Modifier.fillMaxSize()) {
             LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFF1E293B))
-                    .padding(10.dp)
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                items(state.logLines) { line ->
-                    Text(
-                        text = line,
-                        fontSize = 10.sp,
-                        color = Color(0xFF38BDF8),
-                        fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.padding(vertical = 1.dp)
-                    )
+                items(state.entries) { row ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedLine.value = row.message }
+                            .padding(8.dp)
+                    ) {
+                        Text(
+                            text = "${row.timestamp} • ${row.level.uppercase()}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = row.message,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+private fun copyToClipboard(context: Context, text: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText("rustdroid-log", text))
 }

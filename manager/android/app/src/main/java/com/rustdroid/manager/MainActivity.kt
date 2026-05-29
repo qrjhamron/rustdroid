@@ -6,21 +6,30 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.automirrored.rounded.Subject
+import androidx.compose.material.icons.rounded.AdminPanelSettings
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Home
-import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.runtime.*
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rustdroid.manager.ui.MainViewModel
-import com.rustdroid.manager.ui.screen.*
-import top.yukonga.miuix.kmp.basic.NavigationBar
-import top.yukonga.miuix.kmp.basic.NavigationBarItem
-import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.rustdroid.manager.ui.screen.HomeScreen
+import com.rustdroid.manager.ui.screen.LogScreen
+import com.rustdroid.manager.ui.screen.ModulesScreen
+import com.rustdroid.manager.ui.screen.SettingsScreen
+import com.rustdroid.manager.ui.screen.SuperuserScreen
+import com.rustdroid.manager.ui.theme.RustDroidTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -31,21 +40,19 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Tab(
-    val label: String,
-    val icon: ImageVector
-) {
-    Home("Home", Icons.Rounded.Home),
-    Log("Log", Icons.Rounded.Description),
-    Superuser("Superuser", Icons.Rounded.Security),
-    Settings("Settings", Icons.Rounded.Settings),
-    Modules("Modules", Icons.Rounded.Extension)
+private enum class Tab(val label: String) {
+    Home("Home"),
+    Logs("Logs"),
+    Superuser("Superuser"),
+    Settings("Settings"),
+    Modules("Modules")
 }
 
 @Composable
 private fun RustDroidApp() {
-    MiuixTheme {
-        val viewModel: MainViewModel = viewModel()
+    val viewModel: MainViewModel = viewModel()
+
+    RustDroidTheme(themeMode = viewModel.settingsState.appSettings.themeMode) {
         var selectedTab by remember { mutableIntStateOf(0) }
         val tabs = Tab.entries
 
@@ -56,42 +63,57 @@ private fun RustDroidApp() {
                         NavigationBarItem(
                             selected = selectedTab == index,
                             onClick = { selectedTab = index },
-                            icon = tab.icon,
-                            label = tab.label
+                            icon = {
+                                Icon(
+                                    imageVector = when (tab) {
+                                        Tab.Home -> Icons.Rounded.Home
+                                        Tab.Logs -> Icons.AutoMirrored.Rounded.Subject
+                                        Tab.Superuser -> Icons.Rounded.AdminPanelSettings
+                                        Tab.Settings -> Icons.Rounded.Settings
+                                        Tab.Modules -> Icons.Rounded.Extension
+                                    },
+                                    contentDescription = tab.label
+                                )
+                            },
+                            label = { Text(tab.label) }
                         )
                     }
                 }
             }
-        ) { paddingValues ->
-            Box(modifier = Modifier.padding(paddingValues)) {
+        ) { innerPadding ->
+            Box(modifier = Modifier.padding(innerPadding)) {
                 when (tabs[selectedTab]) {
                     Tab.Home -> HomeScreen(
                         state = viewModel.homeState,
-                        onRefresh = { viewModel.refreshHome() }
+                        onRefresh = viewModel::refreshHome,
+                        onPatch = viewModel::patchBootImage,
+                        onSelectBootImage = viewModel::setSelectedBootImage,
+                        onClearMessage = viewModel::clearHomeMessage
                     )
-                    Tab.Log -> LogScreen(
+
+                    Tab.Logs -> LogScreen(
                         state = viewModel.logState,
-                        onLoadLog = { viewModel.loadLog(it) }
+                        onRefresh = viewModel::refreshLogs,
+                        onClearCategory = viewModel::clearLogCategory
                     )
+
                     Tab.Superuser -> SuperuserScreen(
-                        state = viewModel.superuserState,
-                        onRefresh = { viewModel.refreshSuperuser() },
-                        onRevoke = { viewModel.revokePolicy(it) }
+                        state = viewModel.superuserState
                     )
+
                     Tab.Settings -> SettingsScreen(
                         state = viewModel.settingsState,
-                        onRefreshNative = { viewModel.refreshNativeStatus() },
-                        onExportReport = { viewModel.exportReportBundle() },
-                        onClearMessage = { viewModel.clearSettingsMessage() },
-                        onRefresh = { viewModel.refreshSettings() }
+                        onThemeChange = viewModel::setThemeMode,
+                        onLanguageChange = viewModel::setLanguageMode,
+                        onChannelChange = viewModel::setUpdateChannel,
+                        onCustomChannelChange = viewModel::setCustomChannel,
+                        onReloadNative = viewModel::reloadNativeStatus,
+                        onExportNativeDiagnostics = viewModel::exportNativeDiagnostics,
+                        onClearMessage = viewModel::clearSettingsMessage
                     )
+
                     Tab.Modules -> ModulesScreen(
-                        state = viewModel.modulesState,
-                        onRefresh = { viewModel.refreshModules() },
-                        onToggle = { id, enable -> viewModel.toggleModule(id, enable) },
-                        onRemove = { viewModel.removeModule(it) },
-                        onInstall = { viewModel.installModuleFromPath(it) },
-                        onClearMessage = { viewModel.clearModulesStatusMessage() }
+                        state = viewModel.modulesState
                     )
                 }
             }

@@ -1,325 +1,244 @@
 package com.rustdroid.manager.ui
 
+import android.app.Application
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.rustdroid.manager.NativeBridge
+import com.rustdroid.manager.data.LanguageMode
+import com.rustdroid.manager.data.SettingsRepository
+import com.rustdroid.manager.data.ThemeMode
+import com.rustdroid.manager.data.UpdateChannel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import org.json.JSONArray
-import org.json.JSONObject
+import java.io.File
 
-class MainViewModel : ViewModel() {
+class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-    // ── Home ───────────────────────────────────────────────────────
+    private val appContext = application.applicationContext
+    private val settingsRepository = SettingsRepository(appContext)
+
     var homeState by mutableStateOf(HomeUiState())
         private set
+
+    var logState by mutableStateOf(LogUiState())
+        private set
+
+    var superuserState by mutableStateOf(SuperuserUiState(
+        unavailableReason = "No superuser requests yet"
+    ))
+        private set
+
+    var modulesState by mutableStateOf(ModulesUiState(
+        unavailableReason = "No modules installed"
+    ))
+        private set
+
+    var settingsState by mutableStateOf(SettingsUiState())
+        private set
+
+    init {
+        viewModelScope.launch {
+            settingsRepository.settings.collectLatest { settings ->
+                settingsState = settingsState.copy(appSettings = settings)
+            }
+        }
+        refreshHome()
+        refreshLogs(logState.selectedCategory)
+        refreshSettings()
+    }
 
     fun refreshHome() {
         homeState = homeState.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val native = NativeBridge.isNativeLoaded()
+            val nativeStatus = NativeBridge.getNativeLibraryStatus()
+            val selectedPath = resolveBootImagePath(settingsState.appSettings.selectedBootImagePath)
 
-                val rootJson = safeJson(NativeBridge.getRootStatus())
-                val runtimeJson = safeJson(NativeBridge.getRuntimeStatus())
-                val securityJson = safeJson(NativeBridge.getSecurityStatus())
-                val compatJson = safeJson(NativeBridge.getDeviceCompatibilitySummary("{}"))
-                val runtimeCompatJson = safeJson(NativeBridge.getRuntimeCompatibility("{}"))
-                val readinessJson = safeJson(NativeBridge.getReleaseReadiness("{}"))
-
-                val security = securityJson.optJSONObject("security")
-                val daemonReachable = runtimeJson.optBoolean("daemon_responding", false)
-                val compatSummary = compatJson.optJSONObject("summary")
-                val readinessReport = readinessJson.optJSONObject("report")
-
-                val deviceLevel = compatSummary?.optString("compatibility_level", "")
-                    ?.let { StatusLevel.fromString(it) } ?: StatusLevel.Unknown
-                val runtimeLevel = if (runtimeCompatJson.optString("status") == "unavailable")
-                    StatusLevel.Unavailable
-                else if (runtimeCompatJson.has("report"))
-                    StatusLevel.Ready
-                else StatusLevel.Unknown
-
-                homeState = HomeUiState(
-                    isLoading = false,
-                    nativeLoaded = native,
-                    rustdroidStatus = if (native) "Active" else "Unavailable",
-                    nativeBridgeStatus = if (native) "Loaded" else "Not loaded",
-                    rootStatus = if (rootJson.optString("status") == "unavailable") "Unavailable"
-                        else if (rootJson.optBoolean("is_patched", false)) "Patched" else "Not patched",
-                    daemonStatus = if (daemonReachable) "Connected" else "Offline",
-                    deviceCompatibility = deviceLevel,
-                    runtimeCompatibility = runtimeLevel,
-                    releaseReadiness = readinessReport?.optString("readiness_level", "Unknown") ?: "Unknown",
-                    errorMessage = null
-                )
-            } catch (e: Exception) {
-                homeState = homeState.copy(
-                    isLoading = false,
-                    errorMessage = "Failed to load status: ${e.message}"
-                )
+            if (selectedPath != settingsState.appSettings.selectedBootImagePath && selectedPath != null) {
+                settingsRepository.setSelectedBootImagePath(selectedPath)
             }
-        }
-    }
 
-    // ── Superuser ──────────────────────────────────────────────────
-    var superuserState by mutableStateOf(SuperuserUiState())
-        private set
-
-    fun refreshSuperuser() {
-        superuserState = superuserState.copy(isLoading = true, errorMessage = null)
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val json = safeJson(NativeBridge.listPolicies())
-                if (json.optString("status") == "unavailable" || json.optString("status") == "error") {
-                    superuserState = SuperuserUiState(
-                        isLoading = false,
-                        errorMessage = json.optString("error", "Unavailable")
-                    )
-                    return@launch
-                }
-                val arr = json.optJSONArray("policies") ?: JSONArray()
-                val entries = mutableListOf<SuperuserEntry>()
-                for (i in 0 until arr.length()) {
-                    val p = arr.getJSONObject(i)
-                    entries.add(
-                        SuperuserEntry(
-                            uid = p.optInt("uid", -1),
-                            packageName = p.optString("package_name", "unknown"),
-                            state = p.optString("state", "Unknown"),
-                            ruleType = p.optString("rule_type", "Unknown")
-                        )
-                    )
-                }
-                superuserState = SuperuserUiState(isLoading = false, entries = entries)
-            } catch (e: Exception) {
-                superuserState = SuperuserUiState(
-                    isLoading = false,
-                    errorMessage = "Failed to load policies: ${e.message}"
-                )
+            val analysis = selectedPath?.let { NativeBridge.analyzeBootImage(it) }
+            val level = when {
+                !nativeStatus.loaded -> DeviceCompatibilityLevel.Warning
+                analysis == null -> DeviceCompatibilityLevel.Unknown
+                analysis.success -> DeviceCompatibilityLevel.Ready
+                else -> DeviceCompatibilityLevel.Blocked
             }
+
+            homeState = homeState.copy(
+                isLoading = false,
+                nativeStatus = nativeStatus,
+                selectedImagePath = selectedPath,
+                analysis = analysis,
+                deviceCompatibilityLevel = level,
+                errorMessage = analysis?.error
+            )
         }
     }
 
-    fun revokePolicy(uid: Int) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                NativeBridge.removePolicy(JSONObject().apply { put("uid", uid) }.toString())
-            } catch (_: Exception) {}
-            refreshSuperuser()
+    fun patchBootImage() {
+        if (homeState.isPatching) return
+
+        val selectedPath = homeState.selectedImagePath
+        if (selectedPath.isNullOrBlank()) {
+            homeState = homeState.copy(statusMessage = "Select boot.img first")
+            return
         }
-    }
 
-    // ── Modules ────────────────────────────────────────────────────
-    var modulesState by mutableStateOf(ModulesUiState())
-        private set
-
-    fun refreshModules() {
-        modulesState = modulesState.copy(isLoading = true, errorMessage = null)
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val json = safeJson(NativeBridge.listModules())
-                if (json.optString("status") == "unavailable" || json.optString("status") == "error") {
-                    modulesState = ModulesUiState(
-                        isLoading = false,
-                        errorMessage = json.optString("error", "Unavailable")
-                    )
-                    return@launch
-                }
-                val arr = json.optJSONArray("modules") ?: JSONArray()
-                val modules = mutableListOf<ModuleEntry>()
-                for (i in 0 until arr.length()) {
-                    val m = arr.getJSONObject(i)
-                    modules.add(
-                        ModuleEntry(
-                            id = m.optString("id", ""),
-                            name = m.optString("name", "Unknown"),
-                            version = m.optString("version", "?"),
-                            author = m.optString("author", "?"),
-                            description = m.optString("description", ""),
-                            enabled = m.optBoolean("enabled", false)
-                        )
-                    )
-                }
-                modulesState = ModulesUiState(isLoading = false, modules = modules)
-            } catch (e: Exception) {
-                modulesState = ModulesUiState(
-                    isLoading = false,
-                    errorMessage = "Failed to load modules: ${e.message}"
-                )
-            }
+        if (!homeState.nativeStatus.loaded) {
+            homeState = homeState.copy(statusMessage = "Native library not loaded")
+            return
         }
-    }
 
-    fun toggleModule(moduleId: String, enable: Boolean) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val payload = JSONObject().apply {
-                    put("module_id", moduleId)
-                    put("force", false)
-                }.toString()
-                if (enable) NativeBridge.enableModule(payload)
-                else NativeBridge.disableModule(payload)
-            } catch (_: Exception) {}
-            refreshModules()
-        }
-    }
+        homeState = homeState.copy(isPatching = true, statusMessage = null, errorMessage = null)
 
-    fun removeModule(moduleId: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val payload = JSONObject().apply { put("module_id", moduleId) }.toString()
-                val result = safeJson(NativeBridge.removeModule(payload))
-                val report = result.optJSONObject("report")
-                if (report?.optBoolean("success", false) == true) {
-                    modulesState = modulesState.copy(statusMessage = "Module removed.")
+            val outputDir = appContext.getExternalFilesDir("patched")?.absolutePath
+                ?: File(appContext.filesDir, "patched").apply { mkdirs() }.absolutePath
+
+            val result = NativeBridge.patchBootImage(selectedPath, outputDir)
+            val analysis = NativeBridge.analyzeBootImage(selectedPath)
+
+            homeState = homeState.copy(
+                isPatching = false,
+                analysis = analysis,
+                lastPatchResult = result,
+                statusMessage = if (result.success) {
+                    "Patch created: ${result.outputFileName ?: "patched image"}"
                 } else {
-                    modulesState = modulesState.copy(
-                        statusMessage = "Removal failed: ${report?.optString("error", "unknown")}"
-                    )
-                }
-            } catch (e: Exception) {
-                modulesState = modulesState.copy(statusMessage = "Error: ${e.message}")
-            }
-            refreshModules()
+                    null
+                },
+                errorMessage = if (result.success) null else (result.error ?: "Patch failed")
+            )
+
+            refreshLogs("patch")
         }
     }
 
-    fun installModuleFromPath(zipPath: String) {
-        modulesState = modulesState.copy(statusMessage = "Installing…")
+    fun setSelectedBootImage(path: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val validatePayload = JSONObject().apply { put("zip_path", zipPath) }.toString()
-                val valResult = safeJson(NativeBridge.validateModuleZip(validatePayload))
-                if (valResult.optString("status") != "success") {
-                    modulesState = modulesState.copy(statusMessage = "Validation failed: ${valResult.optString("error")}")
-                    return@launch
-                }
-                val report = valResult.optJSONObject("report")
-                if (report?.optBoolean("is_valid", false) != true) {
-                    modulesState = modulesState.copy(statusMessage = "Invalid module: ${report?.optString("error")}")
-                    return@launch
-                }
-                val installPayload = JSONObject().apply { put("zip_path", zipPath) }.toString()
-                val installResult = safeJson(NativeBridge.installModule(installPayload))
-                val installReport = installResult.optJSONObject("report")
-                if (installReport?.optBoolean("success", false) == true) {
-                    modulesState = modulesState.copy(statusMessage = "Module installed successfully.")
-                } else {
-                    modulesState = modulesState.copy(
-                        statusMessage = "Install failed: ${installReport?.optString("error", "unknown")}"
-                    )
-                }
-            } catch (e: Exception) {
-                modulesState = modulesState.copy(statusMessage = "Error: ${e.message}")
-            }
-            refreshModules()
+            settingsRepository.setSelectedBootImagePath(path)
+            refreshHome()
         }
     }
 
-    fun clearModulesStatusMessage() {
-        modulesState = modulesState.copy(statusMessage = null)
+    fun clearHomeMessage() {
+        homeState = homeState.copy(statusMessage = null, errorMessage = null)
     }
 
-    // ── Log ────────────────────────────────────────────────────────
-    var logState by mutableStateOf(LogUiState())
-        private set
-
-    fun loadLog(logName: String = logState.selectedLog) {
-        logState = logState.copy(isLoading = true, selectedLog = logName, errorMessage = null)
+    fun refreshLogs(category: String = logState.selectedCategory) {
+        logState = logState.copy(isLoading = true, selectedCategory = category, errorMessage = null, message = null)
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val payload = JSONObject().apply {
-                    put("log_name", logName)
-                    put("tail_lines", 50)
-                }.toString()
-                val json = safeJson(NativeBridge.getAuditLogTail(payload))
-                if (json.optString("status") == "unavailable" || json.optString("status") == "error") {
-                    logState = logState.copy(
-                        isLoading = false,
-                        logLines = emptyList(),
-                        errorMessage = json.optString("error", "Logs unavailable")
-                    )
-                    return@launch
-                }
-                val raw = json.optString("lines", "")
-                val lines = if (raw.isBlank()) emptyList() else raw.split("\n")
-                logState = logState.copy(isLoading = false, logLines = lines)
-            } catch (e: Exception) {
+            val nativeStatus = NativeBridge.getNativeLibraryStatus()
+            if (!nativeStatus.loaded) {
                 logState = logState.copy(
                     isLoading = false,
-                    errorMessage = "Failed to load log: ${e.message}"
+                    entries = emptyList(),
+                    errorMessage = nativeStatus.error ?: "Native library not loaded"
                 )
+                return@launch
             }
+
+            val result = NativeBridge.getNativeLogs(category)
+            val entries = result.entries
+            val message = when {
+                result.error != null -> null
+                entries.isEmpty() -> "No logs yet"
+                else -> null
+            }
+            logState = logState.copy(
+                isLoading = false,
+                entries = entries,
+                message = message,
+                errorMessage = result.error ?: if (entries.isEmpty() && category !in listOf("native", "patch")) {
+                    "Unavailable: $category backend is not connected"
+                } else {
+                    null
+                }
+            )
         }
     }
 
-    // ── Settings ───────────────────────────────────────────────────
-    var settingsState by mutableStateOf(SettingsUiState())
-        private set
+    fun clearLogCategory(category: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            NativeBridge.clearNativeLogs(category)
+            refreshLogs(logState.selectedCategory)
+        }
+    }
 
     fun refreshSettings() {
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val native = NativeBridge.isNativeLoaded()
-                val secJson = safeJson(NativeBridge.getSecurityStatus())
-                val security = secJson.optJSONObject("security")
-                settingsState = SettingsUiState(
-                    nativeLoaded = native,
-                    rustdroidVersion = security?.optString("rustdroid_version", "Unknown") ?: "Unknown"
-                )
-            } catch (_: Exception) {
-                settingsState = SettingsUiState(nativeLoaded = NativeBridge.isNativeLoaded())
-            }
+            val nativeStatus = NativeBridge.getNativeLibraryStatus()
+            settingsState = settingsState.copy(
+                nativeStatus = nativeStatus,
+                rustdroidVersion = nativeStatus.version
+            )
         }
     }
 
-    fun refreshNativeStatus() {
-        settingsState = settingsState.copy(statusMessage = "Refreshing…")
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                NativeBridge.validateNativeBridgeState("{}")
-                settingsState = settingsState.copy(statusMessage = "Native status refreshed.")
-            } catch (e: Exception) {
-                settingsState = settingsState.copy(statusMessage = "Error: ${e.message}")
-            }
-        }
+    fun reloadNativeStatus() {
+        refreshSettings()
+        settingsState = settingsState.copy(statusMessage = "Native status reloaded")
+        refreshLogs("native")
     }
 
-    fun exportReportBundle() {
-        settingsState = settingsState.copy(statusMessage = "Exporting…")
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val result = safeJson(NativeBridge.exportReportBundle("{}"))
-                if (result.optString("status") == "success") {
-                    settingsState = settingsState.copy(statusMessage = "Report exported.")
-                } else {
-                    settingsState = settingsState.copy(
-                        statusMessage = result.optString("error", "Export failed.")
-                    )
-                }
-            } catch (e: Exception) {
-                settingsState = settingsState.copy(statusMessage = "Error: ${e.message}")
-            }
+    fun exportNativeDiagnostics() {
+        val status = NativeBridge.getNativeLibraryStatus()
+        val message = buildString {
+            appendLine("Native diagnostics")
+            appendLine("Library: ${status.libraryName}")
+            appendLine("Loaded: ${status.loaded}")
+            appendLine("ABI: ${status.abi}")
+            appendLine("Version: ${status.version}")
+            appendLine("Error: ${status.error ?: "none"}")
         }
+        settingsState = settingsState.copy(statusMessage = message.trim())
     }
 
     fun clearSettingsMessage() {
         settingsState = settingsState.copy(statusMessage = null)
     }
 
-    // ── Helpers ────────────────────────────────────────────────────
-    private fun safeJson(raw: String): JSONObject {
-        return try {
-            JSONObject(raw)
-        } catch (_: Exception) {
-            JSONObject().apply {
-                put("status", "error")
-                put("error", "Invalid response")
-            }
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch(Dispatchers.IO) {
+            settingsRepository.setThemeMode(mode)
+        }
+    }
+
+    fun setLanguageMode(mode: LanguageMode) {
+        viewModelScope.launch(Dispatchers.IO) {
+            settingsRepository.setLanguageMode(mode)
+        }
+    }
+
+    fun setUpdateChannel(channel: UpdateChannel) {
+        viewModelScope.launch(Dispatchers.IO) {
+            settingsRepository.setUpdateChannel(channel)
+        }
+    }
+
+    fun setCustomChannel(channel: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            settingsRepository.setCustomChannel(channel)
+        }
+    }
+
+    private fun resolveBootImagePath(savedPath: String): String? {
+        val candidates = buildList {
+            if (savedPath.isNotBlank()) add(savedPath)
+            add("/root/rustdroid/boot.img")
+            add("/sdcard/Download/boot.img")
+            add("/storage/emulated/0/Download/boot.img")
+        }
+
+        return candidates.firstOrNull { path ->
+            runCatching {
+                File(path).exists() && File(path).isFile
+            }.getOrDefault(false)
         }
     }
 }

@@ -1,140 +1,247 @@
 package com.rustdroid.manager
 
+import android.os.Build
 import android.util.Log
+import org.json.JSONArray
+import org.json.JSONObject
 
-/**
- * NativeBridge: JNI bridge to the Rust rustdroid_core library.
- *
- * Production paths never return mock/fake data.
- * If the native library fails to load, all calls return a structured error JSON
- * with status "unavailable" so the UI can display a clean error state.
- */
+private const val TAG = "RustDroid"
+
+data class NativeLibraryStatus(
+    val loaded: Boolean,
+    val libraryName: String,
+    val abi: String,
+    val version: String,
+    val error: String?
+)
+
+data class BootImageAnalysisResult(
+    val success: Boolean,
+    val path: String,
+    val format: String,
+    val headerVersion: Int,
+    val pageSize: Int,
+    val kernelSize: Int,
+    val ramdiskSize: Int,
+    val kernelDetected: Boolean,
+    val ramdiskDetected: Boolean,
+    val avbFooterDetected: Boolean,
+    val patchStatus: String,
+    val error: String?
+)
+
+data class BootPatchResult(
+    val success: Boolean,
+    val outputPath: String?,
+    val outputFileName: String?,
+    val outputSha256: String?,
+    val manualFlashWarning: String,
+    val error: String?
+)
+
+data class NativeLogEntry(
+    val timestamp: String,
+    val category: String,
+    val level: String,
+    val message: String
+)
+
+data class NativeLogQueryResult(
+    val entries: List<NativeLogEntry>,
+    val error: String?
+)
+
 object NativeBridge {
-    private const val TAG = "RustDroid"
-    private var nativeLoaded: Boolean = false
+    private const val LIB_NAME = "rustdroid_native"
+
+    private var nativeLoaded = false
+    private var loadError: String? = null
 
     init {
         try {
-            System.loadLibrary("rustdroid_core")
+            System.loadLibrary(LIB_NAME)
             nativeLoaded = true
-            Log.i(TAG, "Successfully loaded rustdroid_core JNI library")
+            Log.i(TAG, "Loaded native library: $LIB_NAME")
         } catch (e: UnsatisfiedLinkError) {
             nativeLoaded = false
-            Log.w(TAG, "Failed to load rustdroid_core native library", e)
+            loadError = e.message ?: "Unknown load error"
+            Log.e(TAG, "Failed to load native library: $LIB_NAME", e)
         }
     }
 
-    /** Whether the real native library is loaded. */
-    fun isNativeLoaded(): Boolean = nativeLoaded
+    private external fun nativeGetLibraryStatusJson(): String
+    private external fun nativeGetLibraryVersion(): String
+    private external fun nativeAnalyzeBootImage(path: String): String
+    private external fun nativePatchBootImage(inputPath: String, outputDir: String): String
+    private external fun nativeGetLogs(category: String): String
+    private external fun nativeClearLogs(category: String): Boolean
 
-    // ── JNI external declarations ──────────────────────────────────
-    private external fun nativeGetRootStatus(): String
-    private external fun nativeGetRuntimeStatus(): String
-    private external fun nativeGetInstallState(): String
-    private external fun nativeGetConfig(): String
-    private external fun nativeGetSafetyScope(): String
-    private external fun nativeListPolicies(): String
-    private external fun nativeSetPolicy(json: String): String
-    private external fun nativeRemovePolicy(json: String): String
-    private external fun nativeListPendingRequests(): String
-    private external fun nativeApprovePendingRequest(json: String): String
-    private external fun nativeDenyPendingRequest(json: String): String
-    private external fun nativeGetAuditLogTail(json: String): String
-    private external fun nativeAuditBootImage(json: String): String
-    private external fun nativeVerifyPatchedImage(json: String): String
-    private external fun nativeGetPostBootReport(json: String): String
-    private external fun nativeGetPayloadMetadata(json: String): String
-    private external fun nativeRunSelfCheck(json: String): String
-    private external fun nativeValidateModuleZip(json: String): String
-    private external fun nativeInstallModule(json: String): String
-    private external fun nativeListModules(): String
-    private external fun nativeGetModule(json: String): String
-    private external fun nativeEnableModule(json: String): String
-    private external fun nativeDisableModule(json: String): String
-    private external fun nativeRemoveModule(json: String): String
-    private external fun nativeScanModule(json: String): String
-    private external fun nativeGetInstallLog(json: String): String
-    private external fun nativeValidateModuleScripts(json: String): String
-    private external fun nativeGetModuleScriptPlan(json: String): String
-    private external fun nativeListModuleScripts(json: String): String
-    private external fun nativeGetSecurityStatus(): String
-    private external fun nativeGetCGlueAudit(): String
-    private external fun nativeGetStaticSafetyReport(): String
-    private external fun nativeGetUiSafetyScope(): String
-    private external fun nativeGetRedactionPolicy(): String
-    private external fun nativeValidateNativeBridgeState(json: String): String
-    private external fun nativeAnalyzeBootImageCompatibility(json: String): String
-    private external fun nativeGetRuntimeCompatibility(json: String): String
-    private external fun nativeGetDeviceCompatibilitySummary(json: String): String
-    private external fun nativeGetReleaseReadiness(json: String): String
-    private external fun nativeGetCompatibilityMatrix(json: String): String
-    private external fun nativeExportReportBundle(json: String): String
+    fun getNativeLibraryStatus(): NativeLibraryStatus {
+        val fallback = NativeLibraryStatus(
+            loaded = false,
+            libraryName = LIB_NAME,
+            abi = Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown",
+            version = "Unavailable",
+            error = loadError ?: "Native library not loaded"
+        )
+        if (!nativeLoaded) return fallback
 
-    // ── Error helpers ──────────────────────────────────────────────
-
-    private fun unavailableJson(reason: String = "Native library not loaded"): String =
-        """{"status":"unavailable","error":"$reason"}"""
-
-    private fun errorJson(e: Exception): String =
-        """{"status":"error","error":"${e.message?.replace("\"", "'") ?: "unknown"}"}"""
-
-    private inline fun callNative(crossinline block: () -> String): String {
-        if (!nativeLoaded) return unavailableJson()
         return try {
-            block()
+            val json = JSONObject(nativeGetLibraryStatusJson())
+            NativeLibraryStatus(
+                loaded = json.optBoolean("loaded", true),
+                libraryName = json.optString("libraryName", LIB_NAME),
+                abi = json.optString("abi", Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"),
+                version = json.optString("version", nativeGetLibraryVersion()),
+                error = json.optString("error").takeIf { it.isNotBlank() && it != "null" }
+            )
         } catch (e: Exception) {
-            Log.e(TAG, "Native call failed", e)
-            errorJson(e)
+            fallback.copy(error = "Failed to parse native status: ${e.message}")
         }
     }
 
-    // ── Public API (no mock fallbacks) ─────────────────────────────
+    fun getNativeVersion(): String {
+        if (!nativeLoaded) return "Unavailable"
+        return try {
+            nativeGetLibraryVersion()
+        } catch (_: Exception) {
+            "Unavailable"
+        }
+    }
 
-    fun getRootStatus(): String = callNative { nativeGetRootStatus() }
-    fun getRuntimeStatus(): String = callNative { nativeGetRuntimeStatus() }
-    fun getInstallState(): String = callNative { nativeGetInstallState() }
-    fun getConfig(): String = callNative { nativeGetConfig() }
-    fun getSafetyScope(): String = callNative { nativeGetSafetyScope() }
+    fun analyzeBootImage(path: String): BootImageAnalysisResult {
+        if (!nativeLoaded) {
+            return BootImageAnalysisResult(
+                success = false,
+                path = path,
+                format = "unknown",
+                headerVersion = 0,
+                pageSize = 0,
+                kernelSize = 0,
+                ramdiskSize = 0,
+                kernelDetected = false,
+                ramdiskDetected = false,
+                avbFooterDetected = false,
+                patchStatus = "Failed",
+                error = loadError ?: "Native library not loaded"
+            )
+        }
 
-    fun listPolicies(): String = callNative { nativeListPolicies() }
-    fun setPolicy(json: String): String = callNative { nativeSetPolicy(json) }
-    fun removePolicy(json: String): String = callNative { nativeRemovePolicy(json) }
+        return try {
+            val json = JSONObject(nativeAnalyzeBootImage(path))
+            BootImageAnalysisResult(
+                success = json.optBoolean("success", false),
+                path = json.optString("path", path),
+                format = json.optString("format", "unknown"),
+                headerVersion = json.optInt("headerVersion", 0),
+                pageSize = json.optInt("pageSize", 0),
+                kernelSize = json.optInt("kernelSize", 0),
+                ramdiskSize = json.optInt("ramdiskSize", 0),
+                kernelDetected = json.optBoolean("kernelDetected", false),
+                ramdiskDetected = json.optBoolean("ramdiskDetected", false),
+                avbFooterDetected = json.optBoolean("avbFooterDetected", false),
+                patchStatus = json.optString("patchStatus", "Failed"),
+                error = json.optString("error").takeIf { it.isNotBlank() && it != "null" }
+            )
+        } catch (e: Exception) {
+            BootImageAnalysisResult(
+                success = false,
+                path = path,
+                format = "unknown",
+                headerVersion = 0,
+                pageSize = 0,
+                kernelSize = 0,
+                ramdiskSize = 0,
+                kernelDetected = false,
+                ramdiskDetected = false,
+                avbFooterDetected = false,
+                patchStatus = "Failed",
+                error = "Analyze failed: ${e.message}"
+            )
+        }
+    }
 
-    fun listPendingRequests(): String = callNative { nativeListPendingRequests() }
-    fun approvePendingRequest(json: String): String = callNative { nativeApprovePendingRequest(json) }
-    fun denyPendingRequest(json: String): String = callNative { nativeDenyPendingRequest(json) }
+    fun patchBootImage(inputPath: String, outputDir: String): BootPatchResult {
+        if (!nativeLoaded) {
+            return BootPatchResult(
+                success = false,
+                outputPath = null,
+                outputFileName = null,
+                outputSha256 = null,
+                manualFlashWarning = "Flashing is manual. Keep your original boot.img safe.",
+                error = loadError ?: "Native library not loaded"
+            )
+        }
 
-    fun getAuditLogTail(json: String): String = callNative { nativeGetAuditLogTail(json) }
-    fun auditBootImage(json: String): String = callNative { nativeAuditBootImage(json) }
-    fun verifyPatchedImage(json: String): String = callNative { nativeVerifyPatchedImage(json) }
-    fun getPostBootReport(json: String): String = callNative { nativeGetPostBootReport(json) }
-    fun getPayloadMetadata(json: String): String = callNative { nativeGetPayloadMetadata(json) }
-    fun runSelfCheck(json: String): String = callNative { nativeRunSelfCheck(json) }
+        return try {
+            val json = JSONObject(nativePatchBootImage(inputPath, outputDir))
+            BootPatchResult(
+                success = json.optBoolean("success", false),
+                outputPath = json.optString("outputPath").takeIf { it.isNotBlank() && it != "null" },
+                outputFileName = json.optString("outputFileName").takeIf { it.isNotBlank() && it != "null" },
+                outputSha256 = json.optString("outputSha256").takeIf { it.isNotBlank() && it != "null" },
+                manualFlashWarning = json.optString(
+                    "manualFlashWarning",
+                    "Flashing is manual. Never overwrite your original boot.img."
+                ),
+                error = json.optString("error").takeIf { it.isNotBlank() && it != "null" }
+            )
+        } catch (e: Exception) {
+            BootPatchResult(
+                success = false,
+                outputPath = null,
+                outputFileName = null,
+                outputSha256 = null,
+                manualFlashWarning = "Flashing is manual. Keep your original boot.img safe.",
+                error = "Patch failed: ${e.message}"
+            )
+        }
+    }
 
-    fun validateModuleZip(json: String): String = callNative { nativeValidateModuleZip(json) }
-    fun installModule(json: String): String = callNative { nativeInstallModule(json) }
-    fun listModules(): String = callNative { nativeListModules() }
-    fun getModule(json: String): String = callNative { nativeGetModule(json) }
-    fun enableModule(json: String): String = callNative { nativeEnableModule(json) }
-    fun disableModule(json: String): String = callNative { nativeDisableModule(json) }
-    fun removeModule(json: String): String = callNative { nativeRemoveModule(json) }
-    fun scanModule(json: String): String = callNative { nativeScanModule(json) }
-    fun getInstallLog(json: String): String = callNative { nativeGetInstallLog(json) }
-    fun validateModuleScripts(json: String): String = callNative { nativeValidateModuleScripts(json) }
-    fun getModuleScriptPlan(json: String): String = callNative { nativeGetModuleScriptPlan(json) }
-    fun listModuleScripts(json: String): String = callNative { nativeListModuleScripts(json) }
+    fun getNativeLogs(category: String): NativeLogQueryResult {
+        if (!nativeLoaded) {
+            return NativeLogQueryResult(
+                entries = emptyList(),
+                error = loadError ?: "Native library not loaded"
+            )
+        }
 
-    fun getSecurityStatus(): String = callNative { nativeGetSecurityStatus() }
-    fun getCGlueAudit(): String = callNative { nativeGetCGlueAudit() }
-    fun getStaticSafetyReport(): String = callNative { nativeGetStaticSafetyReport() }
-    fun getUiSafetyScope(): String = callNative { nativeGetUiSafetyScope() }
-    fun getRedactionPolicy(): String = callNative { nativeGetRedactionPolicy() }
-    fun validateNativeBridgeState(json: String): String = callNative { nativeValidateNativeBridgeState(json) }
+        return try {
+            val json = JSONObject(nativeGetLogs(category))
+            val status = json.optString("status", "error")
+            if (status != "success") {
+                return NativeLogQueryResult(
+                    entries = emptyList(),
+                    error = json.optString("error", "Failed to load logs")
+                )
+            }
 
-    fun analyzeBootImageCompatibility(json: String): String = callNative { nativeAnalyzeBootImageCompatibility(json) }
-    fun getRuntimeCompatibility(json: String): String = callNative { nativeGetRuntimeCompatibility(json) }
-    fun getDeviceCompatibilitySummary(json: String): String = callNative { nativeGetDeviceCompatibilitySummary(json) }
-    fun getReleaseReadiness(json: String): String = callNative { nativeGetReleaseReadiness(json) }
-    fun getCompatibilityMatrix(json: String): String = callNative { nativeGetCompatibilityMatrix(json) }
-    fun exportReportBundle(json: String): String = callNative { nativeExportReportBundle(json) }
+            val arr = json.optJSONArray("entries") ?: JSONArray()
+            val entries = buildList {
+                for (i in 0 until arr.length()) {
+                    val row = arr.optJSONObject(i) ?: continue
+                    add(
+                        NativeLogEntry(
+                            timestamp = row.optString("timestamp", ""),
+                            category = row.optString("category", category),
+                            level = row.optString("level", "info"),
+                            message = row.optString("message", "")
+                        )
+                    )
+                }
+            }
+            NativeLogQueryResult(entries = entries, error = null)
+        } catch (e: Exception) {
+            NativeLogQueryResult(emptyList(), "Failed to parse logs: ${e.message}")
+        }
+    }
+
+    fun clearNativeLogs(category: String): Boolean {
+        if (!nativeLoaded) return false
+        return try {
+            nativeClearLogs(category)
+        } catch (_: Exception) {
+            false
+        }
+    }
 }

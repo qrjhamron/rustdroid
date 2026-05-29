@@ -1,38 +1,114 @@
 package com.rustdroid.manager.ui.screen
 
-import androidx.compose.foundation.layout.*
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Error
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Memory
+import androidx.compose.material.icons.rounded.PublishedWithChanges
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.rustdroid.manager.ui.DeviceCompatibilityLevel
 import com.rustdroid.manager.ui.HomeUiState
-import com.rustdroid.manager.ui.StatusLevel
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Text
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.io.File
 
 @Composable
 fun HomeScreen(
     state: HomeUiState,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onPatch: () -> Unit,
+    onSelectBootImage: (path: String) -> Unit,
+    onClearMessage: () -> Unit
 ) {
     LaunchedEffect(Unit) { onRefresh() }
 
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        uri ?: return@rememberLauncherForActivityResult
+        CoroutineScope(Dispatchers.IO).launch {
+            runCatching {
+                val target = File(context.cacheDir, "selected_boot.img")
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    target.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                onSelectBootImage(target.absolutePath)
+            }
+        }
+    }
+
+    state.statusMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = onClearMessage,
+            title = { Text("Status") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = onClearMessage) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+
+    state.lastPatchResult?.takeIf { it.success }?.let { patchResult ->
+        AlertDialog(
+            onDismissRequest = onClearMessage,
+            title = { Text("Patch created") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Output: ${patchResult.outputPath ?: "Unavailable"}")
+                    Text("SHA-256: ${patchResult.outputSha256 ?: "Unavailable"}")
+                    Text(patchResult.manualFlashWarning, color = MaterialTheme.colorScheme.tertiary)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = onClearMessage) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+
     if (state.isLoading) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(modifier = Modifier.size(32.dp))
+            CircularProgressIndicator()
         }
         return
     }
@@ -42,9 +118,8 @@ fun HomeScreen(
             .fillMaxSize()
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp)
+        contentPadding = PaddingValues(vertical = 16.dp)
     ) {
-        // Header
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -52,105 +127,111 @@ fun HomeScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
+                    Text("RustDroid", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                     Text(
-                        text = "RustDroid",
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Auditable Rust Root Manager",
-                        fontSize = 12.sp,
-                        color = Color.Gray
+                        "Rust-based Android root manager",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 IconButton(onClick = onRefresh) {
-                    Icon(
-                        imageVector = Icons.Rounded.Refresh,
-                        contentDescription = "Refresh",
-                        tint = Color(0xFF0284C7)
-                    )
+                    Icon(Icons.Rounded.Refresh, contentDescription = "Refresh")
                 }
             }
         }
 
-        // Error banner
-        state.errorMessage?.let { error ->
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Error,
-                            contentDescription = "Error",
-                            tint = Color(0xFFEF4444),
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+        item {
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Memory, contentDescription = null)
+                        Spacer(modifier = Modifier.weight(1f))
                         Text(
-                            text = error,
-                            fontSize = 12.sp,
-                            color = Color(0xFFEF4444)
+                            if (state.nativeStatus.loaded) "Loaded" else "Not loaded",
+                            color = if (state.nativeStatus.loaded) Color(0xFF3E6B56) else Color(0xFF7A5A5A),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    KeyValue("Library", state.nativeStatus.libraryName)
+                    KeyValue("ABI", state.nativeStatus.abi)
+                    KeyValue("Version", state.nativeStatus.version)
+                    if (!state.nativeStatus.loaded) {
+                        Text(
+                            state.nativeStatus.error ?: "Native library not loaded",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
                         )
                     }
                 }
             }
         }
 
-        // Status card
         item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Status",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    StatusRow("RustDroid", state.rustdroidStatus, statusColor(state.rustdroidStatus))
-                    StatusRow("Native Bridge", state.nativeBridgeStatus, statusColor(state.nativeBridgeStatus))
-                    StatusRow("Root", state.rootStatus, statusColor(state.rootStatus))
-                    StatusRow("Daemon", state.daemonStatus, statusColor(state.daemonStatus))
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Boot Image", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+
+                    KeyValue("Selected image", state.selectedImagePath?.substringAfterLast('/') ?: "unavailable")
+                    KeyValue("Format", state.analysis?.format ?: "unknown")
+                    KeyValue("Kernel", if (state.analysis?.kernelDetected == true) "detected" else "unknown")
+                    KeyValue("Ramdisk", if (state.analysis?.ramdiskDetected == true) "detected" else "unknown")
+                    KeyValue("Patch status", state.analysis?.patchStatus ?: "Not patched")
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = { launcher.launch("*/*") },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Rounded.FolderOpen, contentDescription = null)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Select")
+                        }
+                        Button(
+                            onClick = onPatch,
+                            enabled = state.nativeStatus.loaded && !state.selectedImagePath.isNullOrBlank() && !state.isPatching,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            if (state.isPatching) {
+                                CircularProgressIndicator(modifier = Modifier.height(16.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Patching")
+                            } else {
+                                Icon(Icons.Rounded.PublishedWithChanges, contentDescription = null)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Patch / Pasang")
+                            }
+                        }
+                    }
+
+                    if (!state.nativeStatus.loaded) {
+                        Text("Native library not loaded", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         }
 
-        // Compatibility card
         item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Compatibility",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    StatusLevelRow("Device", state.deviceCompatibility)
-                    StatusLevelRow("Runtime", state.runtimeCompatibility)
-                }
-            }
-        }
-
-        // Release readiness card
-        item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Release Readiness",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(text = "Level", fontSize = 12.sp, color = Color.Gray)
-                        StatusChip(
-                            text = state.releaseReadiness,
-                            level = StatusLevel.fromString(state.releaseReadiness)
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Device", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val level = state.deviceCompatibilityLevel
+                        val icon = when (level) {
+                            DeviceCompatibilityLevel.Ready -> Icons.Rounded.CheckCircle
+                            DeviceCompatibilityLevel.Warning -> Icons.Rounded.Warning
+                            DeviceCompatibilityLevel.Unknown -> Icons.Rounded.Warning
+                            DeviceCompatibilityLevel.Blocked -> Icons.Rounded.Warning
+                        }
+                        Icon(icon, contentDescription = null)
+                        Text(level.name)
+                    }
+                    if (!state.errorMessage.isNullOrBlank()) {
+                        Text(
+                            text = state.errorMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -159,69 +240,10 @@ fun HomeScreen(
     }
 }
 
-// ── Helpers ─────────────────────────────────────────────────────────
-
 @Composable
-private fun StatusRow(label: String, value: String, color: Color) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(text = label, fontSize = 12.sp, color = Color.Gray)
-        Text(text = value, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = color)
+private fun KeyValue(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
     }
-}
-
-@Composable
-private fun StatusLevelRow(label: String, level: StatusLevel) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(text = label, fontSize = 12.sp, color = Color.Gray)
-        StatusChip(text = level.name, level = level)
-    }
-}
-
-@Composable
-private fun StatusChip(text: String, level: StatusLevel) {
-    val (bgColor, fgColor, icon) = when (level) {
-        StatusLevel.Ready -> Triple(Color(0xFF10B981), Color.White, Icons.Rounded.CheckCircle)
-        StatusLevel.Warning -> Triple(Color(0xFFF59E0B), Color.White, Icons.Rounded.Warning)
-        StatusLevel.Blocked -> Triple(Color(0xFFEF4444), Color.White, Icons.Rounded.Error)
-        StatusLevel.Unsupported -> Triple(Color(0xFF6B7280), Color.White, Icons.Rounded.Error)
-        StatusLevel.Unavailable -> Triple(Color(0xFF9CA3AF), Color.White, Icons.Rounded.Error)
-        StatusLevel.Unknown -> Triple(Color(0xFF6B7280), Color.White, Icons.Rounded.Warning)
-    }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .padding(0.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = bgColor,
-            modifier = Modifier.size(14.dp)
-        )
-        Spacer(modifier = Modifier.width(4.dp))
-        Text(
-            text = text,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            color = bgColor
-        )
-    }
-}
-
-private fun statusColor(status: String): Color = when (status.lowercase()) {
-    "active", "loaded", "connected", "patched" -> Color(0xFF10B981)
-    "unavailable", "not loaded", "offline", "not patched" -> Color(0xFF9CA3AF)
-    else -> Color(0xFF6B7280)
 }
