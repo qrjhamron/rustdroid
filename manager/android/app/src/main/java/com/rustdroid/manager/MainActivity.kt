@@ -21,14 +21,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rustdroid.manager.ui.MainViewModel
+import com.rustdroid.manager.ui.PatchFlowState
 import com.rustdroid.manager.ui.screen.HomeScreen
 import com.rustdroid.manager.ui.screen.LogScreen
 import com.rustdroid.manager.ui.screen.ModulesScreen
+import com.rustdroid.manager.ui.screen.PatchFlowScreen
 import com.rustdroid.manager.ui.screen.SettingsScreen
 import com.rustdroid.manager.ui.screen.SuperuserScreen
 import com.rustdroid.manager.ui.theme.RustDroidTheme
@@ -54,53 +57,77 @@ private fun RustDroidApp() {
 
     RustDroidTheme(themeMode = viewModel.settingsState.appSettings.themeMode) {
         var selectedTab by remember { mutableIntStateOf(0) }
+        var showPatchFlow by remember { mutableStateOf(false) }
         val tabs = Tab.entries
 
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             bottomBar = {
-                NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    tonalElevation = androidx.compose.ui.unit.Dp.Hairline
-                ) {
-                    tabs.forEachIndexed { index, tab ->
-                        NavigationBarItem(
-                            selected = selectedTab == index,
-                            onClick = { selectedTab = index },
-                            icon = {
-                                Icon(
-                                    imageVector = when (tab) {
-                                        Tab.Home -> Icons.Rounded.Home
-                                        Tab.Superuser -> Icons.Rounded.AdminPanelSettings
-                                        Tab.Modules -> Icons.Rounded.Extension
-                                        Tab.Logs -> Icons.AutoMirrored.Rounded.Subject
-                                        Tab.Settings -> Icons.Rounded.Settings
-                                    },
-                                    contentDescription = tab.label
+                if (!showPatchFlow) {
+                    NavigationBar(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        tonalElevation = androidx.compose.ui.unit.Dp.Hairline
+                    ) {
+                        tabs.forEachIndexed { index, tab ->
+                            NavigationBarItem(
+                                selected = selectedTab == index,
+                                onClick = { selectedTab = index },
+                                icon = {
+                                    Icon(
+                                        imageVector = when (tab) {
+                                            Tab.Home -> Icons.Rounded.Home
+                                            Tab.Superuser -> Icons.Rounded.AdminPanelSettings
+                                            Tab.Modules -> Icons.Rounded.Extension
+                                            Tab.Logs -> Icons.AutoMirrored.Rounded.Subject
+                                            Tab.Settings -> Icons.Rounded.Settings
+                                        },
+                                        contentDescription = tab.label
+                                    )
+                                },
+                                label = { Text(tab.label, style = MaterialTheme.typography.labelSmall) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = MaterialTheme.colorScheme.onSurface,
+                                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                    indicatorColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                            },
-                            label = { Text(tab.label, style = MaterialTheme.typography.labelSmall) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.onSurface,
-                                selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                                indicatorColor = MaterialTheme.colorScheme.surfaceVariant,
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                        )
+                        }
                     }
                 }
             }
         ) { innerPadding ->
             Box(modifier = Modifier.padding(innerPadding)) {
+                if (showPatchFlow) {
+                    PatchFlowScreen(
+                        state = viewModel.homeState,
+                        onBack = {
+                            if (viewModel.homeState.patch.flowState != PatchFlowState.Patching) {
+                                showPatchFlow = false
+                            }
+                        },
+                        onPrepare = viewModel::preparePatchFlow,
+                        onSelectBootImage = viewModel::setSelectedBootImage,
+                        onStartPatch = viewModel::patchBootImage,
+                        onResetPatch = viewModel::resetPatchState,
+                        onOpenLogs = {
+                            showPatchFlow = false
+                            selectedTab = tabs.indexOf(Tab.Logs)
+                            viewModel.refreshLogs("patch")
+                        }
+                    )
+                    return@Box
+                }
+
                 when (tabs[selectedTab]) {
                     Tab.Home -> HomeScreen(
                         state = viewModel.homeState,
+                        superuserCount = viewModel.superuserState.entries.size,
+                        moduleCount = viewModel.modulesState.modules.size,
                         onRefresh = viewModel::refreshHome,
-                        onPatch = viewModel::patchBootImage,
-                        onSelectBootImage = viewModel::setSelectedBootImage,
-                        onResetPatch = viewModel::resetPatchState,
-                        onOpenLogs = { selectedTab = tabs.indexOf(Tab.Logs) }
+                        onOpenPatcher = { showPatchFlow = true },
+                        onOpenSettings = { selectedTab = tabs.indexOf(Tab.Settings) }
                     )
 
                     Tab.Superuser -> SuperuserScreen(state = viewModel.superuserState)

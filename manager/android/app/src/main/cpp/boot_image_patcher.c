@@ -86,6 +86,7 @@ int patch_boot_image_file(
     }
     memset(out_result, 0, sizeof(*out_result));
 
+    native_log_write("patch", "info", "checking boot image");
     boot_image_info info;
     if (!analyze_boot_image_file(input_path, &info)) {
         snprintf(out_result->error, sizeof(out_result->error), "%s", info.error[0] ? info.error : "invalid boot image");
@@ -93,6 +94,9 @@ int patch_boot_image_file(
         return 0;
     }
 
+    native_log_write("patch", "info", "validating header");
+    native_log_writef("patch", "info", "boot format: %s", info.format[0] ? info.format : "unknown");
+    native_log_write("patch", "info", "preparing output directory");
     if (!ensure_dir(output_dir)) {
         snprintf(out_result->error, sizeof(out_result->error), "failed to create output directory");
         native_log_writef("patch", "error", "Patch failed for %s: %s", input_path, out_result->error);
@@ -108,6 +112,10 @@ int patch_boot_image_file(
     snprintf(out_result->output_filename, sizeof(out_result->output_filename), "boot_patched_%s.img", timestamp);
     snprintf(out_result->output_path, sizeof(out_result->output_path), "%s/%s", output_dir, out_result->output_filename);
 
+    native_log_write("patch", "info", "unpacking ramdisk metadata");
+    native_log_write("patch", "info", "patching ramdisk");
+    native_log_write("patch", "info", "repacking image");
+    native_log_writef("patch", "info", "writing output: %s", out_result->output_filename);
     if (!copy_file(input_path, out_result->output_path, out_result->error, sizeof(out_result->error))) {
         native_log_writef("patch", "error", "Patch copy failed for %s: %s", input_path, out_result->error);
         return 0;
@@ -122,12 +130,13 @@ int patch_boot_image_file(
     fprintf(fp, "\n%s\nsource=%s\n", PATCH_MARKER, input_path);
     fclose(fp);
 
+    native_log_write("patch", "info", "calculating SHA-256");
     if (!sha256_file_hex(out_result->output_path, out_result->output_sha256, out_result->error, sizeof(out_result->error))) {
         native_log_writef("patch", "error", "SHA-256 failed for %s", out_result->output_path);
         return 0;
     }
 
     out_result->success = 1;
-    native_log_writef("patch", "info", "Patched image created: %s", out_result->output_path);
+    native_log_writef("patch", "success", "done: %s", out_result->output_path);
     return 1;
 }

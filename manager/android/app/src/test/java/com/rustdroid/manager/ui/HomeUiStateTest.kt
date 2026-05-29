@@ -15,6 +15,7 @@ class HomeUiStateTest {
         )
 
         assertTrue(state.canPatch)
+        assertEquals("Ready", state.patchEngineLabel)
         assertNull(state.patchDisabledReason)
     }
 
@@ -26,6 +27,7 @@ class HomeUiStateTest {
         )
 
         assertFalse(state.canPatch)
+        assertEquals("Blocked", state.patchEngineLabel)
         assertEquals("Native layer is unavailable.", state.patchDisabledReason)
     }
 

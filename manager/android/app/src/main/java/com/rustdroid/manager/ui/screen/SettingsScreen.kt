@@ -154,6 +154,16 @@ fun SettingsScreen(
 
         item {
             SectionCard {
+                Text("Patch settings", style = MaterialTheme.typography.titleMedium)
+                CompactInfoRow("Output location", "App patched folder")
+                CompactInfoRow("Output naming", "boot_patched_timestamp.img")
+                CompactInfoRow("Verbose logging", "Native patch log")
+                CompactInfoRow("Original image", "Preserved")
+            }
+        }
+
+        item {
+            SectionCard {
                 Text("Diagnostics", style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     StatusPill(

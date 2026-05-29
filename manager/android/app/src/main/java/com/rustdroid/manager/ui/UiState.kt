@@ -51,6 +51,8 @@ data class BootImageUiState(
 
 data class PatchUiState(
     val flowState: PatchFlowState = PatchFlowState.Idle,
+    val currentStep: String = "Ready",
+    val logLines: List<String> = emptyList(),
     val outputFileName: String? = null,
     val outputPath: String? = null,
     val sha256: String? = null,
@@ -69,6 +71,9 @@ data class HomeUiState(
                 bootImage.filePath != null &&
                 bootImage.status == BootImageStatus.Patchable &&
                 patch.flowState != PatchFlowState.Patching
+
+    val patchEngineLabel: String
+        get() = if (canPatch) "Ready" else "Blocked"
 
     val patchDisabledReason: String?
         get() = when {

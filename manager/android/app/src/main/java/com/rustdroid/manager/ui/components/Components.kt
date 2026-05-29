@@ -249,3 +249,116 @@ fun LogRow(entry: NativeLogEntry, expanded: Boolean, onClick: () -> Unit, onCopy
         )
     }
 }
+
+@Composable
+fun SectionHeader(title: String, modifier: Modifier = Modifier) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier.padding(start = 2.dp)
+    )
+}
+
+@Composable
+fun SummaryCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    SectionCard(modifier = modifier, content = content)
+}
+
+@Composable
+fun ActionCard(
+    title: String,
+    subtitle: String,
+    actionLabel: String,
+    onAction: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    icon: ImageVector? = null
+) {
+    PrimaryActionCard(modifier = modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (icon != null) {
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(26.dp))
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(title, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        ActionButton(actionLabel, onClick = onAction, enabled = enabled, modifier = Modifier.fillMaxWidth())
+    }
+}
+
+@Composable
+fun StatusChip(text: String, color: Color, modifier: Modifier = Modifier) = StatusPill(text, color, modifier)
+
+@Composable
+fun SettingRow(label: String, value: String, modifier: Modifier = Modifier) = CompactInfoRow(label, value, modifier)
+
+@Composable
+fun DangerNotice(text: String, modifier: Modifier = Modifier) = DangerNote(text, modifier)
+
+@Composable
+fun PatchStepCard(
+    title: String,
+    subtitle: String,
+    stateLabel: String,
+    stateColor: Color,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit = {}
+) {
+    SectionCard(modifier = modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            StatusChip(stateLabel, stateColor)
+        }
+        content()
+    }
+}
+
+@Composable
+fun ResultCard(
+    title: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    SectionCard(modifier = modifier) {
+        Text(title, style = MaterialTheme.typography.titleLarge, color = color)
+        content()
+    }
+}
+
+@Composable
+fun TerminalLogPanel(
+    lines: List<String>,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xFF090B0E))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        if (lines.isEmpty()) {
+            Text(
+                text = "\$ waiting for patch output",
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            lines.takeLast(80).forEach { line ->
+                Text(
+                    text = "\$ $line",
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                    color = Color(0xFFC8CDD7)
+                )
+            }
+        }
+    }
+}

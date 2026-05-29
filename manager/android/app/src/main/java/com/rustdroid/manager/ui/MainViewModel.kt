@@ -14,6 +14,7 @@ import com.rustdroid.manager.data.SettingsRepository
 import com.rustdroid.manager.data.ThemeMode
 import com.rustdroid.manager.data.UpdateChannel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.io.File
@@ -77,19 +78,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (homeState.patch.flowState == PatchFlowState.Patching || !homeState.canPatch) return
 
         val selectedPath = homeState.bootImage.filePath ?: return
+        NativeBridge.clearNativeLogs("patch")
         homeState = homeState.copy(
-            patch = PatchUiState(flowState = PatchFlowState.Patching)
+            patch = PatchUiState(
+                flowState = PatchFlowState.Patching,
+                currentStep = "Starting patch",
+                logLines = listOf("starting patch session")
+            )
         )
 
         viewModelScope.launch(Dispatchers.IO) {
             val outputDir = appContext.getExternalFilesDir("patched")?.apply { mkdirs() }?.absolutePath
                 ?: File(appContext.filesDir, "patched").apply { mkdirs() }.absolutePath
 
+            val poller = launch {
+                while (homeState.patch.flowState == PatchFlowState.Patching) {
+                    updatePatchLogSnapshot()
+                    delay(250)
+                }
+            }
+
             val result = NativeBridge.patchBootImage(selectedPath, outputDir)
+            poller.cancel()
+            val finalLines = currentPatchLogLines().ifEmpty { homeState.patch.logLines }
             homeState = homeState.copy(
                 patch = if (result.success) {
                     PatchUiState(
                         flowState = PatchFlowState.Success,
+                        currentStep = "Patch complete",
+                        logLines = finalLines,
                         outputFileName = result.outputFileName ?: result.outputPath?.substringAfterLast('/'),
                         outputPath = result.outputPath,
                         sha256 = result.outputSha256,
@@ -100,6 +117,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     PatchUiState(
                         flowState = PatchFlowState.Failed,
+                        currentStep = "Patch failed",
+                        logLines = finalLines,
                         error = result.error?.toUserPatchError() ?: "Patch failed. Check the selected image and try again."
                     )
                 }
@@ -110,6 +129,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun resetPatchState() {
         homeState = homeState.copy(patch = PatchUiState())
+    }
+
+    fun preparePatchFlow() {
+        if (homeState.patch.flowState != PatchFlowState.Patching) {
+            homeState = homeState.copy(patch = PatchUiState())
+        }
+        refreshHome()
     }
 
     fun setSelectedBootImage(path: String) {
@@ -200,6 +226,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setCustomChannel(channel: String) {
         viewModelScope.launch(Dispatchers.IO) { settingsRepository.setCustomChannel(channel) }
+    }
+
+
+    private fun updatePatchLogSnapshot() {
+        val lines = currentPatchLogLines()
+        if (lines.isNotEmpty()) {
+            homeState = homeState.copy(
+                patch = homeState.patch.copy(
+                    logLines = lines,
+                    currentStep = lines.last().substringAfter("] ").take(48)
+                )
+            )
+        }
+    }
+
+    private fun currentPatchLogLines(): List<String> {
+        val result = NativeBridge.getNativeLogs("patch")
+        return result.entries.map { entry ->
+            val time = entry.timestamp.substringAfter('T', entry.timestamp).take(8).ifBlank { "--:--:--" }
+            "[$time] ${entry.message}"
+        }
     }
 
     private fun NativeLibraryStatus.toUiState(): NativeStatusUiState {
