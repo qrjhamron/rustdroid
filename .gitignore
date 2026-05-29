@@ -31,3 +31,4 @@ out/
 *.log
 temp/
 tmp/
+.antigravitycli/
