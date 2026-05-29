@@ -27,7 +27,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Compile Rust Workspace Binaries
-        run: cargo test --workspace --manifest-path rust/Cargo.toml --no-run
+        run: cargo build --workspace --manifest-path rust/Cargo.toml
 
       - name: Run Rust Tests
         run: cargo test --workspace --manifest-path rust/Cargo.toml
