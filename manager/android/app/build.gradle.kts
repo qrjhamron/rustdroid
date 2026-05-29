@@ -54,6 +54,8 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation(libs.androidx.compose.material.icons.extended)
 
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+
     implementation(libs.miuix)
     implementation(libs.miuix.icons)
     
