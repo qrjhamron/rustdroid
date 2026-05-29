@@ -1,0 +1,15 @@
+[package]
+name = "rustdroid-su"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "su"
+path = "src/main.rs"
+
+[dependencies]
+libc = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+rustdroid-common = { workspace = true }

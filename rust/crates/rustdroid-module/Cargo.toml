@@ -1,0 +1,13 @@
+[package]
+name = "rustdroid-module"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+rustdroid-common = { workspace = true }
+rustdroid-audit = { workspace = true }
+zip = { workspace = true }
+sha2 = { workspace = true }

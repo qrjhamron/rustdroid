@@ -1,0 +1,6 @@
+id=rustdroid-example-module
+name=RustDroid Example Module
+version=v1.0.0
+versionCode=100
+author=Developer Name
+description=A systemless placeholder module demonstrating post-fs-data and service shell hooks.

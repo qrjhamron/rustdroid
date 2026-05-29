@@ -1,0 +1,31 @@
+# Rust build artifacts
+rust/target/
+**/target/
+
+# Gradle and Android build artifacts
+.gradle/
+**/build/
+local.properties
+*.apk
+*.ap_
+*.dex
+*.class
+*.hprof
+
+# IDE and Editor files
+.idea/
+*.iml
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# RustDroid output and generated images
+out/
+**/out/
+*.img
+*.zip
+*.log
+temp/
+tmp/

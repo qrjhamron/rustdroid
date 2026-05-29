@@ -1,0 +1,21 @@
+[package]
+name = "rustdroid-daemon"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "rustdroidd"
+path = "src/main.rs"
+
+[dependencies]
+libc = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+rustdroid-common = { workspace = true }
+rustdroid-audit = { workspace = true }
+rustdroid-policy = { workspace = true }
+rustdroid-module = { workspace = true }
+rustdroid-mount = { workspace = true }
+rustdroid-boot = { workspace = true }
+

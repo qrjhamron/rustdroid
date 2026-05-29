@@ -1,0 +1,10 @@
+[package]
+name = "rustdroid-mount"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libc = { workspace = true }
+thiserror = { workspace = true }
+rustdroid-common = { workspace = true }
+rustdroid-audit = { workspace = true }

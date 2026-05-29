@@ -1,0 +1,26 @@
+# RustDroid Daemon Init Configuration (v0.8 Android Boot Integration)
+#
+# This file is used to register and launch the privileged RustDroid daemon.
+# Lifecycle:
+# - The service starts during 'post-fs-data' trigger, ensuring that the decrypted
+#   /data storage and the base folder /data/adb/rustdroid are fully decrypted and ready.
+# - Running with '--foreground' is standard to let init monitor the service.
+#
+# Safety Scope:
+# - It only launches the daemon in the legitimate, privileged system context.
+# - It does not contain bypass, hiding, or stealth behavior.
+# - It does not disable or weaken SELinux.
+# - It does not execute systemless root pivots.
+# - Module mounting is not enabled in v0.8.
+# - Version v0.8 only prepares assets and launches the daemon.
+
+on post-fs-data
+    # Start the daemon when /data persistent structures are decrypted and mounted.
+    start rustdroidd
+
+service rustdroidd /data/adb/rustdroid/bin/rustdroidd --foreground
+    user root
+    group root
+    seclabel u:r:su:s0
+    oneshot
+    disabled
