@@ -43,6 +43,9 @@ RustDroid enforces a conservative, transparent, and auditable safety boundary. I
 *   **No Stealth/Hiding**: Does not support root hiding, process hiding, file hiding, kprobe hiding, or syscall interception/hiding.
 *   **No Auto-Flashing/Rebooting**: Never modifies boot partitions directly, writes to raw block devices, or reboots devices automatically.
 *   **Disabled Actions in Current Version**: Direct filesystem bind mounts and module script execution are disabled via compile-time guards. Only static analysis and dry-run plans are generated.
+*   **Platform & Environment Limits**:
+    *   **Cloud Phone Limitations**: Cloud-rooted phones are limited to userspace testing and offline patching validation; they cannot validate physical boot integrations.
+    *   **No Module Mounting**: Direct mounting of files via overlays or bind mounts is disabled in the current v1.0-alpha safety release scope.
 
 ---
 
