@@ -1,38 +1,88 @@
 package com.rustdroid.manager.ui
 
-import com.rustdroid.manager.BootImageAnalysisResult
-import com.rustdroid.manager.BootPatchResult
-import com.rustdroid.manager.NativeLibraryStatus
 import com.rustdroid.manager.NativeLogEntry
 import com.rustdroid.manager.data.AppSettings
-import com.rustdroid.manager.data.LanguageMode
-import com.rustdroid.manager.data.ThemeMode
-import com.rustdroid.manager.data.UpdateChannel
 
-enum class DeviceCompatibilityLevel {
-    Ready,
-    Warning,
-    Unknown,
-    Blocked
+enum class NativeStatusLevel { Ready, Unavailable }
+
+enum class BootImageStatus {
+    Valid,
+    Unsupported,
+    AlreadyPatched,
+    UnknownFormat,
+    MissingRamdisk,
+    Patchable
 }
+
+enum class PatchFlowState {
+    Idle,
+    Patching,
+    Success,
+    Failed
+}
+
+data class NativeStatusUiState(
+    val level: NativeStatusLevel = NativeStatusLevel.Unavailable,
+    val label: String = "Native unavailable",
+    val libraryName: String = "rustdroid_native",
+    val abi: String = "unknown",
+    val version: String = "Unavailable",
+    val error: String? = null
+)
+
+data class BootImageTechnicalDetails(
+    val headerVersion: String = "Unknown",
+    val kernelDetected: Boolean = false,
+    val ramdiskDetected: Boolean = false,
+    val avbFooterDetected: Boolean = false,
+    val fileSize: String = "Unknown",
+    val sha256: String = "Unavailable",
+    val nativeParserResult: String = "Unavailable"
+)
+
+data class BootImageUiState(
+    val fileName: String? = null,
+    val filePath: String? = null,
+    val status: BootImageStatus? = null,
+    val statusLabel: String? = null,
+    val formatChip: String? = null,
+    val technicalDetails: BootImageTechnicalDetails? = null
+)
+
+data class PatchUiState(
+    val flowState: PatchFlowState = PatchFlowState.Idle,
+    val outputFileName: String? = null,
+    val outputPath: String? = null,
+    val sha256: String? = null,
+    val error: String? = null,
+    val warning: String = "Flashing is manual. Verify the image before use."
+)
 
 data class HomeUiState(
     val isLoading: Boolean = true,
-    val isPatching: Boolean = false,
-    val nativeStatus: NativeLibraryStatus = NativeLibraryStatus(
-        loaded = false,
-        libraryName = "rustdroid_native",
-        abi = "unknown",
-        version = "Unavailable",
-        error = "Native library not loaded"
-    ),
-    val selectedImagePath: String? = null,
-    val analysis: BootImageAnalysisResult? = null,
-    val lastPatchResult: BootPatchResult? = null,
-    val deviceCompatibilityLevel: DeviceCompatibilityLevel = DeviceCompatibilityLevel.Unknown,
-    val statusMessage: String? = null,
-    val errorMessage: String? = null
-)
+    val nativeStatus: NativeStatusUiState = NativeStatusUiState(),
+    val bootImage: BootImageUiState = BootImageUiState(),
+    val patch: PatchUiState = PatchUiState()
+) {
+    val canPatch: Boolean
+        get() = nativeStatus.level == NativeStatusLevel.Ready &&
+                bootImage.filePath != null &&
+                bootImage.status == BootImageStatus.Patchable &&
+                patch.flowState != PatchFlowState.Patching
+
+    val patchDisabledReason: String?
+        get() = when {
+            nativeStatus.level != NativeStatusLevel.Ready -> "Native layer is unavailable."
+            bootImage.filePath == null -> "Select a boot image first."
+            bootImage.status == BootImageStatus.AlreadyPatched -> "This image already appears patched."
+            bootImage.status == BootImageStatus.MissingRamdisk -> "This image is missing a ramdisk."
+            bootImage.status == BootImageStatus.UnknownFormat -> "This image format is unknown."
+            bootImage.status == BootImageStatus.Unsupported -> "This image is not supported."
+            bootImage.status != BootImageStatus.Patchable -> "Analyze a valid boot image first."
+            patch.flowState == PatchFlowState.Patching -> "Patching is already in progress."
+            else -> null
+        }
+}
 
 data class SuperuserAppEntry(
     val appName: String,
@@ -44,7 +94,8 @@ data class SuperuserAppEntry(
 data class SuperuserUiState(
     val isLoading: Boolean = false,
     val entries: List<SuperuserAppEntry> = emptyList(),
-    val unavailableReason: String? = "Unavailable"
+    val isEmpty: Boolean = true,
+    val backendError: String? = null
 )
 
 data class ModuleUiEntry(
@@ -56,33 +107,31 @@ data class ModuleUiEntry(
 data class ModulesUiState(
     val isLoading: Boolean = false,
     val modules: List<ModuleUiEntry> = emptyList(),
-    val unavailableReason: String? = "Unavailable"
+    val isEmpty: Boolean = true,
+    val isSupported: Boolean = false,
+    val backendError: String? = null
 )
 
 data class LogUiState(
     val isLoading: Boolean = false,
-    val selectedCategory: String = "native",
+    val selectedCategory: String = "patch",
     val entries: List<NativeLogEntry> = emptyList(),
-    val message: String? = null,
+    val isEmpty: Boolean = true,
     val errorMessage: String? = null
 )
 
 data class SettingsUiState(
     val appSettings: AppSettings = AppSettings(),
-    val nativeStatus: NativeLibraryStatus = NativeLibraryStatus(
-        loaded = false,
-        libraryName = "rustdroid_native",
-        abi = "unknown",
-        version = "Unavailable",
-        error = "Native library not loaded"
-    ),
+    val nativeStatus: NativeStatusUiState = NativeStatusUiState(),
     val appVersion: String = "1.0.0",
     val rustdroidVersion: String = "Unavailable",
-    val statusMessage: String? = null
+    val diagnosticsMessage: String? = null
 )
 
-val LogCategories = listOf("su", "daemon", "first_boot", "self_check", "module", "native", "patch")
-
-val ThemeOptions = ThemeMode.entries.toList()
-val LanguageOptions = LanguageMode.entries.toList()
-val ChannelOptions = UpdateChannel.entries.toList()
+val LogCategories = listOf(
+    "patch" to "Patch",
+    "native" to "Native",
+    "su" to "Superuser",
+    "module" to "Modules",
+    "daemon" to "System"
+)

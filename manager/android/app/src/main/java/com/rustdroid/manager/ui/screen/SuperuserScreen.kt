@@ -1,53 +1,58 @@
 package com.rustdroid.manager.ui.screen
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AdminPanelSettings
-import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.rustdroid.manager.ui.SuperuserUiState
+import com.rustdroid.manager.ui.components.CompactInfoRow
+import com.rustdroid.manager.ui.components.EmptyStateCard
+import com.rustdroid.manager.ui.components.ErrorRed
+import com.rustdroid.manager.ui.components.ScreenHeader
+import com.rustdroid.manager.ui.components.SectionCard
 
 @Composable
 fun SuperuserScreen(state: SuperuserUiState) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp),
-        contentPadding = PaddingValues(vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(horizontal = 18.dp),
+        contentPadding = PaddingValues(vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        item {
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(Icons.Rounded.AdminPanelSettings, contentDescription = null)
-                    Text("Superuser", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    if (state.entries.isEmpty()) {
-                        Text(
-                            state.unavailableReason ?: "No superuser requests yet",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        state.entries.forEach { entry ->
-                            Text("${entry.appName} (${entry.packageName}) • ${entry.state}")
-                        }
-                    }
+        item { ScreenHeader("Superuser", "App access requests") }
+        state.backendError?.let { error ->
+            item {
+                SectionCard {
+                    Text("Superuser backend error", style = MaterialTheme.typography.titleMedium, color = ErrorRed)
+                    Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        if (state.entries.isEmpty()) {
+            item {
+                EmptyStateCard(
+                    icon = Icons.Rounded.AdminPanelSettings,
+                    title = "No superuser requests",
+                    subtitle = "Apps requesting access will appear here."
+                )
+            }
+        } else {
+            items(state.entries.size) { index ->
+                val entry = state.entries[index]
+                SectionCard {
+                    Text(entry.appName, style = MaterialTheme.typography.titleMedium)
+                    CompactInfoRow("Package", entry.packageName)
+                    CompactInfoRow("Access", entry.state)
+                    CompactInfoRow("Last used", entry.lastUsed)
                 }
             }
         }

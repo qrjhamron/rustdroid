@@ -3,7 +3,7 @@ package com.rustdroid.manager.ui.screen
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,14 +14,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.automirrored.rounded.Subject
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -29,16 +27,21 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rustdroid.manager.ui.LogCategories
 import com.rustdroid.manager.ui.LogUiState
+import com.rustdroid.manager.ui.components.EmptyStateCard
+import com.rustdroid.manager.ui.components.ErrorRed
+import com.rustdroid.manager.ui.components.LogRow
+import com.rustdroid.manager.ui.components.ScreenHeader
+import com.rustdroid.manager.ui.components.SectionCard
 
 @Composable
 fun LogScreen(
@@ -49,126 +52,88 @@ fun LogScreen(
     LaunchedEffect(Unit) { onRefresh(state.selectedCategory) }
 
     val context = LocalContext.current
-    val selectedLine = remember { mutableStateOf<String?>(null) }
-
-    selectedLine.value?.let { line ->
-        AlertDialog(
-            onDismissRequest = { selectedLine.value = null },
-            title = { Text("Log line") },
-            text = { Text(line) },
-            confirmButton = {
-                TextButton(onClick = { selectedLine.value = null }) {
-                    Text("Close")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    copyToClipboard(context, line)
-                    selectedLine.value = null
-                }) {
-                    Icon(Icons.Rounded.ContentCopy, contentDescription = null)
-                    Text("Copy")
-                }
-            }
-        )
-    }
+    var expandedIndex by remember(state.selectedCategory) { mutableStateOf<Int?>(null) }
+    val selectedLabel = LogCategories.firstOrNull { it.first == state.selectedCategory }?.second ?: "Patch"
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .padding(horizontal = 18.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Logs", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Row {
-                IconButton(onClick = { onClearCategory(state.selectedCategory) }) {
-                    Text("Clear", style = MaterialTheme.typography.labelLarge)
-                }
-                IconButton(onClick = { onRefresh(state.selectedCategory) }) {
-                    Icon(Icons.Rounded.Refresh, contentDescription = "Refresh")
-                }
+        ScreenHeader(title = "Logs", subtitle = "Focused activity history") {
+            TextButton(onClick = { onClearCategory(state.selectedCategory) }) { Text("Clear") }
+            IconButton(onClick = { onRefresh(state.selectedCategory) }) {
+                Icon(Icons.Rounded.Refresh, contentDescription = "Refresh logs")
             }
         }
 
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            LogCategories.forEach { category ->
+            LogCategories.forEach { (key, label) ->
                 AssistChip(
-                    onClick = { onRefresh(category) },
-                    label = { Text(category) },
-                    shape = RoundedCornerShape(12.dp)
+                    onClick = { onRefresh(key) },
+                    label = { Text(label) },
+                    leadingIcon = if (key == state.selectedCategory) {
+                        { Icon(Icons.AutoMirrored.Rounded.Subject, contentDescription = null) }
+                    } else null
                 )
             }
         }
 
         if (state.isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             return
         }
 
         state.errorMessage?.let { error ->
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = error,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(14.dp)
-                )
+            SectionCard {
+                Text("Native log unavailable", style = MaterialTheme.typography.titleMedium, color = ErrorRed)
+                Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             return
         }
 
-        if (state.entries.isEmpty()) {
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = state.message ?: "No logs yet",
-                    modifier = Modifier.padding(14.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+        if (state.isEmpty) {
+            EmptyStateCard(
+                icon = Icons.AutoMirrored.Rounded.Subject,
+                title = "No logs yet",
+                subtitle = emptySubtitle(selectedLabel)
+            )
             return
         }
 
-        ElevatedCard(modifier = Modifier.fillMaxSize()) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(10.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                items(state.entries) { row ->
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { selectedLine.value = row.message }
-                            .padding(8.dp)
-                    ) {
-                        Text(
-                            text = "${row.timestamp} • ${row.level.uppercase()}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = row.message,
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(state.entries.size) { index ->
+                val row = state.entries[index]
+                LogRow(
+                    entry = row,
+                    expanded = expandedIndex == index,
+                    onClick = { expandedIndex = if (expandedIndex == index) null else index },
+                    onCopy = { context.copyToClipboard("rustdroid-log", row.message) }
+                )
             }
         }
     }
 }
 
-private fun copyToClipboard(context: Context, text: String) {
-    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    clipboard.setPrimaryClip(ClipData.newPlainText("rustdroid-log", text))
+private fun emptySubtitle(label: String): String = when (label) {
+    "Patch" -> "Patch activity will appear after selecting and patching a boot image."
+    "Native" -> "Native loader and parser messages will appear here."
+    "Superuser" -> "Superuser request events will appear here."
+    "Modules" -> "Module activity will appear when module support is enabled."
+    else -> "System events will appear here."
+}
+
+private fun Context.copyToClipboard(label: String, text: String) {
+    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
 }

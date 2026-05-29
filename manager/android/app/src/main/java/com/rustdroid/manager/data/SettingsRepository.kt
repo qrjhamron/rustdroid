@@ -15,7 +15,7 @@ enum class LanguageMode { SYSTEM, ENGLISH, INDONESIAN }
 enum class UpdateChannel { STABLE, BETA, CANARY, CUSTOM }
 
 data class AppSettings(
-    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val themeMode: ThemeMode = ThemeMode.DARK,
     val languageMode: LanguageMode = LanguageMode.SYSTEM,
     val updateChannel: UpdateChannel = UpdateChannel.STABLE,
     val customChannel: String = "",
@@ -36,7 +36,7 @@ class SettingsRepository(private val context: Context) {
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
         AppSettings(
-            themeMode = prefs.enumValue(Keys.THEME_MODE, ThemeMode.SYSTEM),
+            themeMode = prefs.enumValue(Keys.THEME_MODE, ThemeMode.DARK),
             languageMode = prefs.enumValue(Keys.LANGUAGE_MODE, LanguageMode.SYSTEM),
             updateChannel = prefs.enumValue(Keys.UPDATE_CHANNEL, UpdateChannel.STABLE),
             customChannel = prefs[Keys.CUSTOM_CHANNEL].orEmpty(),

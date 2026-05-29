@@ -12,8 +12,10 @@ import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,18 +36,16 @@ import com.rustdroid.manager.ui.theme.RustDroidTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent {
-            RustDroidApp()
-        }
+        setContent { RustDroidApp() }
     }
 }
 
 private enum class Tab(val label: String) {
     Home("Home"),
-    Logs("Logs"),
     Superuser("Superuser"),
-    Settings("Settings"),
-    Modules("Modules")
+    Modules("Modules"),
+    Logs("Logs"),
+    Settings("Settings")
 }
 
 @Composable
@@ -57,8 +57,12 @@ private fun RustDroidApp() {
         val tabs = Tab.entries
 
         Scaffold(
+            containerColor = MaterialTheme.colorScheme.background,
             bottomBar = {
-                NavigationBar {
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = androidx.compose.ui.unit.Dp.Hairline
+                ) {
                     tabs.forEachIndexed { index, tab ->
                         NavigationBarItem(
                             selected = selectedTab == index,
@@ -67,15 +71,22 @@ private fun RustDroidApp() {
                                 Icon(
                                     imageVector = when (tab) {
                                         Tab.Home -> Icons.Rounded.Home
-                                        Tab.Logs -> Icons.AutoMirrored.Rounded.Subject
                                         Tab.Superuser -> Icons.Rounded.AdminPanelSettings
-                                        Tab.Settings -> Icons.Rounded.Settings
                                         Tab.Modules -> Icons.Rounded.Extension
+                                        Tab.Logs -> Icons.AutoMirrored.Rounded.Subject
+                                        Tab.Settings -> Icons.Rounded.Settings
                                     },
                                     contentDescription = tab.label
                                 )
                             },
-                            label = { Text(tab.label) }
+                            label = { Text(tab.label, style = MaterialTheme.typography.labelSmall) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.onSurface,
+                                selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                                indicatorColor = MaterialTheme.colorScheme.surfaceVariant,
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         )
                     }
                 }
@@ -88,17 +99,16 @@ private fun RustDroidApp() {
                         onRefresh = viewModel::refreshHome,
                         onPatch = viewModel::patchBootImage,
                         onSelectBootImage = viewModel::setSelectedBootImage,
-                        onClearMessage = viewModel::clearHomeMessage
+                        onResetPatch = viewModel::resetPatchState,
+                        onOpenLogs = { selectedTab = tabs.indexOf(Tab.Logs) }
                     )
 
+                    Tab.Superuser -> SuperuserScreen(state = viewModel.superuserState)
+                    Tab.Modules -> ModulesScreen(state = viewModel.modulesState)
                     Tab.Logs -> LogScreen(
                         state = viewModel.logState,
                         onRefresh = viewModel::refreshLogs,
                         onClearCategory = viewModel::clearLogCategory
-                    )
-
-                    Tab.Superuser -> SuperuserScreen(
-                        state = viewModel.superuserState
                     )
 
                     Tab.Settings -> SettingsScreen(
@@ -109,11 +119,7 @@ private fun RustDroidApp() {
                         onCustomChannelChange = viewModel::setCustomChannel,
                         onReloadNative = viewModel::reloadNativeStatus,
                         onExportNativeDiagnostics = viewModel::exportNativeDiagnostics,
-                        onClearMessage = viewModel::clearSettingsMessage
-                    )
-
-                    Tab.Modules -> ModulesScreen(
-                        state = viewModel.modulesState
+                        onClearMessage = viewModel::clearDiagnosticsMessage
                     )
                 }
             }
