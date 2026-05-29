@@ -1,0 +1,49 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  validate-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Set up Rust
+        uses: actions/rust-actions/setup-rust@v1
+        with:
+          rust-version: stable
+
+      - name: Run Rust Tests
+        run: cargo test --workspace --manifest-path rust/Cargo.toml
+
+      - name: Run Security Scan
+        run: bash scripts/security-scan.sh
+
+      - name: Make Gradle Wrapper Executable
+        run: chmod +x manager/android/gradlew
+
+      - name: Build Debug APK
+        run: |
+          cd manager/android
+          ./gradlew assembleDebug
+
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: manager/android/app/build/outputs/apk/debug/app-debug.apk

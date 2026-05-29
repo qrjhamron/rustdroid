@@ -5,6 +5,8 @@ rust/target/
 # Gradle and Android build artifacts
 .gradle/
 **/build/
+.kotlin/
+**/.kotlin/
 local.properties
 *.apk
 *.ap_
