@@ -2,6 +2,7 @@ package com.rustdroid.manager.data
 
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -20,7 +21,10 @@ data class AppSettings(
     val updateChannel: UpdateChannel = UpdateChannel.STABLE,
     val customChannel: String = "",
     val accentColor: String = "Graphite",
-    val selectedBootImagePath: String = ""
+    val selectedBootImagePath: String = "",
+    val isPatchApplied: Boolean = false,
+    val outputNamingFormat: String = "boot_patched_timestamp.img",
+    val verboseLogging: Boolean = false
 )
 
 class SettingsRepository(private val context: Context) {
@@ -32,6 +36,9 @@ class SettingsRepository(private val context: Context) {
         val CUSTOM_CHANNEL = stringPreferencesKey("custom_channel")
         val ACCENT_COLOR = stringPreferencesKey("accent_color")
         val SELECTED_BOOT_IMAGE_PATH = stringPreferencesKey("selected_boot_image_path")
+        val IS_PATCH_APPLIED = booleanPreferencesKey("is_patch_applied")
+        val OUTPUT_NAMING_FORMAT = stringPreferencesKey("output_naming_format")
+        val VERBOSE_LOGGING = booleanPreferencesKey("verbose_logging")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -41,7 +48,10 @@ class SettingsRepository(private val context: Context) {
             updateChannel = prefs.enumValue(Keys.UPDATE_CHANNEL, UpdateChannel.STABLE),
             customChannel = prefs[Keys.CUSTOM_CHANNEL].orEmpty(),
             accentColor = prefs[Keys.ACCENT_COLOR] ?: "Graphite",
-            selectedBootImagePath = prefs[Keys.SELECTED_BOOT_IMAGE_PATH].orEmpty()
+            selectedBootImagePath = prefs[Keys.SELECTED_BOOT_IMAGE_PATH].orEmpty(),
+            isPatchApplied = prefs[Keys.IS_PATCH_APPLIED] ?: false,
+            outputNamingFormat = prefs[Keys.OUTPUT_NAMING_FORMAT] ?: "boot_patched_timestamp.img",
+            verboseLogging = prefs[Keys.VERBOSE_LOGGING] ?: false
         )
     }
 
@@ -51,6 +61,17 @@ class SettingsRepository(private val context: Context) {
     suspend fun setCustomChannel(channel: String) = writeString(Keys.CUSTOM_CHANNEL, channel.trim())
     suspend fun setAccentColor(color: String) = writeString(Keys.ACCENT_COLOR, color)
     suspend fun setSelectedBootImagePath(path: String) = writeString(Keys.SELECTED_BOOT_IMAGE_PATH, path)
+    suspend fun setPatchApplied(applied: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.IS_PATCH_APPLIED] = applied
+        }
+    }
+    suspend fun setOutputNamingFormat(format: String) = writeString(Keys.OUTPUT_NAMING_FORMAT, format)
+    suspend fun setVerboseLogging(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.VERBOSE_LOGGING] = enabled
+        }
+    }
 
     private suspend fun writeString(key: Preferences.Key<String>, value: String) {
         context.dataStore.edit { prefs ->

@@ -70,6 +70,8 @@ import java.io.File
 @Composable
 fun PatchFlowScreen(
     state: HomeUiState,
+    isPatchApplied: Boolean,
+    onConfirmFlashApplied: (Boolean) -> Unit,
     onBack: () -> Unit,
     onPrepare: () -> Unit,
     onSelectBootImage: (path: String) -> Unit,
@@ -126,7 +128,16 @@ fun PatchFlowScreen(
             }
 
             PatchFlowState.Patching -> item { PatchProgressContent(state) }
-            PatchFlowState.Success -> item { PatchSuccessContent(state, context, onResetPatch, onOpenLogs) }
+            PatchFlowState.Success -> item {
+                PatchSuccessContent(
+                    state = state,
+                    isPatchApplied = isPatchApplied,
+                    onConfirmFlashApplied = onConfirmFlashApplied,
+                    context = context,
+                    onResetPatch = onResetPatch,
+                    onOpenLogs = onOpenLogs
+                )
+            }
             PatchFlowState.Failed -> item { PatchFailedContent(state, onStartPatch, onOpenLogs, onBack) }
         }
     }
@@ -165,26 +176,6 @@ private fun PatchSetupContent(
                     ActionButton("Details", onClick = onShowTechnicalDetails, isPrimary = false, modifier = Modifier.weight(1f))
                 }
             }
-        }
-
-        PatchStepCard(
-            title = "Patch method",
-            subtitle = "Standard native patch mode",
-            stateLabel = if (state.nativeStatus.level == NativeStatusLevel.Ready) "Ready" else "Blocked",
-            stateColor = if (state.nativeStatus.level == NativeStatusLevel.Ready) SuccessGreen else ErrorRed
-        ) {
-            CompactInfoRow("Mode", "Standard")
-            CompactInfoRow("Output", "App-managed patched folder")
-            CompactInfoRow("Original image", "Preserved")
-        }
-
-        SectionCard {
-            Text("Advanced options", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "No extra patch options are exposed by the current native backend.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
 
         state.patchDisabledReason?.let {
@@ -230,26 +221,81 @@ private fun PatchProgressContent(state: HomeUiState) {
 @Composable
 private fun PatchSuccessContent(
     state: HomeUiState,
+    isPatchApplied: Boolean,
+    onConfirmFlashApplied: (Boolean) -> Unit,
     context: Context,
     onResetPatch: () -> Unit,
     onOpenLogs: () -> Unit
 ) {
     val patch = state.patch
+    val downloadLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        uri?.let {
+            CoroutineScope(Dispatchers.IO).launch {
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use { output ->
+                        File(patch.outputPath.orEmpty()).inputStream().use { input ->
+                            input.copyTo(output)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         ResultCard(title = "Patch complete", color = SuccessGreen) {
             CompactInfoRow("Output file", patch.outputFileName ?: "patched boot image")
-            CompactInfoRow("Output path", patch.outputPath ?: "Unavailable")
             CompactInfoRow("SHA-256", patch.sha256 ?: "Unavailable")
             DangerNotice("Flashing is manual. Verify the image before use.")
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                ActionButton("Share", onClick = { context.shareOutput(patch.outputPath) }, isPrimary = false, icon = Icons.Rounded.IosShare, modifier = Modifier.weight(1f))
-                ActionButton("Copy path", onClick = { context.copyText("RustDroid output path", patch.outputPath.orEmpty()) }, isPrimary = false, icon = Icons.Rounded.ContentCopy, modifier = Modifier.weight(1f))
+                ActionButton(
+                    text = "Download patched image",
+                    onClick = {
+                        downloadLauncher.launch(patch.outputFileName ?: "boot_patched.img")
+                    },
+                    icon = Icons.Rounded.FolderOpen,
+                    modifier = Modifier.weight(1f)
+                )
+                ActionButton(
+                    text = "Share",
+                    onClick = { context.shareOutput(patch.outputPath) },
+                    isPrimary = false,
+                    icon = Icons.Rounded.IosShare,
+                    modifier = Modifier.weight(1f)
+                )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                ActionButton("Open folder", onClick = { context.openOutput(patch.outputPath) }, isPrimary = false, modifier = Modifier.weight(1f))
-                ActionButton("View log", onClick = onOpenLogs, modifier = Modifier.weight(1f))
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            ActionButton("View log", onClick = onOpenLogs, isPrimary = false, modifier = Modifier.fillMaxWidth())
+        }
+
+        SectionCard {
+            Text("Confirm Flash Status", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Have you successfully flashed the patched boot image to your device?",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (isPatchApplied) {
+                StatusChip(text = "Flash confirmed & applied", color = SuccessGreen)
+            } else {
+                ActionButton(
+                    text = "I have flashed this image",
+                    onClick = { onConfirmFlashApplied(true) },
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
+
         SectionCard {
             Text("Terminal output", style = MaterialTheme.typography.titleMedium)
             TerminalLogPanel(lines = patch.logLines)

@@ -17,14 +17,18 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rustdroid.manager.ui.MainViewModel
 import com.rustdroid.manager.ui.PatchFlowState
@@ -35,6 +39,7 @@ import com.rustdroid.manager.ui.screen.PatchFlowScreen
 import com.rustdroid.manager.ui.screen.SettingsScreen
 import com.rustdroid.manager.ui.screen.SuperuserScreen
 import com.rustdroid.manager.ui.theme.RustDroidTheme
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,10 +49,10 @@ class MainActivity : ComponentActivity() {
 }
 
 private enum class Tab(val label: String) {
-    Home("Home"),
+    Patch("Patch"),
+    Logs("Logs"),
     Superuser("Superuser"),
     Modules("Modules"),
-    Logs("Logs"),
     Settings("Settings")
 }
 
@@ -60,8 +65,13 @@ private fun RustDroidApp() {
         var showPatchFlow by remember { mutableStateOf(false) }
         val tabs = Tab.entries
 
+        val isPatchApplied = viewModel.settingsState.appSettings.isPatchApplied
+        val snackbarHostState = remember { SnackbarHostState() }
+        val scope = rememberCoroutineScope()
+
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
+            snackbarHost = { SnackbarHost(snackbarHostState) },
             bottomBar = {
                 if (!showPatchFlow) {
                     NavigationBar(
@@ -69,22 +79,38 @@ private fun RustDroidApp() {
                         tonalElevation = androidx.compose.ui.unit.Dp.Hairline
                     ) {
                         tabs.forEachIndexed { index, tab ->
+                            val isLocked = (tab == Tab.Superuser || tab == Tab.Modules) && !isPatchApplied
                             NavigationBarItem(
                                 selected = selectedTab == index,
-                                onClick = { selectedTab = index },
+                                onClick = {
+                                    if (isLocked) {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("Flash your patched boot image first to unlock this section.")
+                                        }
+                                    } else {
+                                        selectedTab = index
+                                    }
+                                },
                                 icon = {
                                     Icon(
                                         imageVector = when (tab) {
-                                            Tab.Home -> Icons.Rounded.Home
+                                            Tab.Patch -> Icons.Rounded.Home
+                                            Tab.Logs -> Icons.AutoMirrored.Rounded.Subject
                                             Tab.Superuser -> Icons.Rounded.AdminPanelSettings
                                             Tab.Modules -> Icons.Rounded.Extension
-                                            Tab.Logs -> Icons.AutoMirrored.Rounded.Subject
                                             Tab.Settings -> Icons.Rounded.Settings
                                         },
-                                        contentDescription = tab.label
+                                        contentDescription = tab.label,
+                                        modifier = if (isLocked) Modifier.alpha(0.38f) else Modifier
                                     )
                                 },
-                                label = { Text(tab.label, style = MaterialTheme.typography.labelSmall) },
+                                label = {
+                                    Text(
+                                        tab.label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = if (isLocked) Modifier.alpha(0.38f) else Modifier
+                                    )
+                                },
                                 colors = NavigationBarItemDefaults.colors(
                                     selectedIconColor = MaterialTheme.colorScheme.onSurface,
                                     selectedTextColor = MaterialTheme.colorScheme.onSurface,
@@ -102,6 +128,8 @@ private fun RustDroidApp() {
                 if (showPatchFlow) {
                     PatchFlowScreen(
                         state = viewModel.homeState,
+                        isPatchApplied = isPatchApplied,
+                        onConfirmFlashApplied = viewModel::setPatchApplied,
                         onBack = {
                             if (viewModel.homeState.patch.flowState != PatchFlowState.Patching) {
                                 showPatchFlow = false
@@ -121,7 +149,7 @@ private fun RustDroidApp() {
                 }
 
                 when (tabs[selectedTab]) {
-                    Tab.Home -> HomeScreen(
+                    Tab.Patch -> HomeScreen(
                         state = viewModel.homeState,
                         superuserCount = viewModel.superuserState.entries.size,
                         moduleCount = viewModel.modulesState.modules.size,
@@ -130,20 +158,20 @@ private fun RustDroidApp() {
                         onOpenSettings = { selectedTab = tabs.indexOf(Tab.Settings) }
                     )
 
-                    Tab.Superuser -> SuperuserScreen(state = viewModel.superuserState)
-                    Tab.Modules -> ModulesScreen(state = viewModel.modulesState)
                     Tab.Logs -> LogScreen(
                         state = viewModel.logState,
                         onRefresh = viewModel::refreshLogs,
                         onClearCategory = viewModel::clearLogCategory
                     )
 
+                    Tab.Superuser -> SuperuserScreen(state = viewModel.superuserState)
+                    Tab.Modules -> ModulesScreen(state = viewModel.modulesState)
                     Tab.Settings -> SettingsScreen(
                         state = viewModel.settingsState,
                         onThemeChange = viewModel::setThemeMode,
-                        onLanguageChange = viewModel::setLanguageMode,
-                        onChannelChange = viewModel::setUpdateChannel,
-                        onCustomChannelChange = viewModel::setCustomChannel,
+                        onAccentColorChange = viewModel::setAccentColor,
+                        onOutputNamingFormatChange = viewModel::setOutputNamingFormat,
+                        onVerboseLoggingChange = viewModel::setVerboseLogging,
                         onReloadNative = viewModel::reloadNativeStatus,
                         onExportNativeDiagnostics = viewModel::exportNativeDiagnostics,
                         onClearMessage = viewModel::clearDiagnosticsMessage

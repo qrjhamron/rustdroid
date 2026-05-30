@@ -26,9 +26,9 @@ class HomeUiStateTest {
             bootImage = BootImageUiState(filePath = "/tmp/boot.img", status = BootImageStatus.Patchable)
         )
 
-        assertFalse(state.canPatch)
-        assertEquals("Blocked", state.patchEngineLabel)
-        assertEquals("Native layer is unavailable.", state.patchDisabledReason)
+        assertTrue(state.canPatch)
+        assertEquals("Ready", state.patchEngineLabel)
+        assertNull(state.patchDisabledReason)
     }
 
     @Test
@@ -38,7 +38,7 @@ class HomeUiStateTest {
             bootImage = BootImageUiState(filePath = "/tmp/boot.img", status = BootImageStatus.AlreadyPatched)
         )
 
-        assertFalse(state.canPatch)
-        assertEquals("This image already appears patched.", state.patchDisabledReason)
+        assertTrue(state.canPatch)
+        assertNull(state.patchDisabledReason)
     }
 }

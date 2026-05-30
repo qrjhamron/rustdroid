@@ -88,8 +88,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
 
         viewModelScope.launch(Dispatchers.IO) {
-            val outputDir = appContext.getExternalFilesDir("patched")?.apply { mkdirs() }?.absolutePath
-                ?: File(appContext.filesDir, "patched").apply { mkdirs() }.absolutePath
+            val outputDir = File(appContext.cacheDir, "patched").apply { mkdirs() }.absolutePath
 
             val poller = launch {
                 while (homeState.patch.flowState == PatchFlowState.Patching) {
@@ -228,6 +227,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) { settingsRepository.setCustomChannel(channel) }
     }
 
+    fun setAccentColor(color: String) {
+        viewModelScope.launch(Dispatchers.IO) { settingsRepository.setAccentColor(color) }
+    }
+
+    fun setPatchApplied(applied: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) { settingsRepository.setPatchApplied(applied) }
+    }
+
+    fun setVerboseLogging(enabled: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) { settingsRepository.setVerboseLogging(enabled) }
+    }
+
+    fun setOutputNamingFormat(format: String) {
+        viewModelScope.launch(Dispatchers.IO) { settingsRepository.setOutputNamingFormat(format) }
+    }
+
 
     private fun updatePatchLogSnapshot() {
         val lines = currentPatchLogLines()
@@ -286,7 +301,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun BootImageAnalysisResult.toBootStatus(): BootImageStatus = when {
         !success && error?.contains("unsupported", ignoreCase = true) == true -> BootImageStatus.Unsupported
         !success -> BootImageStatus.UnknownFormat
-        patchStatus.contains("patched", ignoreCase = true) -> BootImageStatus.AlreadyPatched
+        patchStatus.contains("patched", ignoreCase = true) -> BootImageStatus.Patchable
         !ramdiskDetected -> BootImageStatus.MissingRamdisk
         !format.isMeaningfulFormat() -> BootImageStatus.UnknownFormat
         ramdiskDetected -> BootImageStatus.Patchable

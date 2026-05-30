@@ -67,9 +67,7 @@ data class HomeUiState(
     val patch: PatchUiState = PatchUiState()
 ) {
     val canPatch: Boolean
-        get() = nativeStatus.level == NativeStatusLevel.Ready &&
-                bootImage.filePath != null &&
-                bootImage.status == BootImageStatus.Patchable &&
+        get() = bootImage.filePath != null &&
                 patch.flowState != PatchFlowState.Patching
 
     val patchEngineLabel: String
@@ -77,13 +75,7 @@ data class HomeUiState(
 
     val patchDisabledReason: String?
         get() = when {
-            nativeStatus.level != NativeStatusLevel.Ready -> "Native layer is unavailable."
             bootImage.filePath == null -> "Select a boot image first."
-            bootImage.status == BootImageStatus.AlreadyPatched -> "This image already appears patched."
-            bootImage.status == BootImageStatus.MissingRamdisk -> "This image is missing a ramdisk."
-            bootImage.status == BootImageStatus.UnknownFormat -> "This image format is unknown."
-            bootImage.status == BootImageStatus.Unsupported -> "This image is not supported."
-            bootImage.status != BootImageStatus.Patchable -> "Analyze a valid boot image first."
             patch.flowState == PatchFlowState.Patching -> "Patching is already in progress."
             else -> null
         }
